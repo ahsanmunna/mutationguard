@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import StatusBadge from '@/components/StatusBadge';
 import { useLanguage } from '@/components/LanguageContext';
-import { localName, formatNumber, formatDate } from '@/lib/i18n/translations';
+import { localName, formatDate, formatCount } from '@/lib/i18n/translations';
 import { SEEDED_USERS, DEMO_COOKIE_NAME } from '@/lib/auth-types';
 
 export default function DashboardPage() {
@@ -145,7 +145,7 @@ export default function DashboardPage() {
             {language === 'bn' ? 'মোট আবেদন' : 'Total Applications'}
           </p>
           <p className="text-2xl font-black text-slate-900 dark:text-white mt-1">
-            {formatNumber(visibleTransfers.length, language)}
+            {formatCount(visibleTransfers.length, language)}
           </p>
         </div>
 
@@ -154,7 +154,7 @@ export default function DashboardPage() {
             {language === 'bn' ? 'সক্রিয় ও পর্যালোচনায়' : 'Active / Under Review'}
           </p>
           <p className="text-2xl font-black text-emerald-700 dark:text-emerald-400 mt-1">
-            {formatNumber(
+            {formatCount(
               countByStatus('verified') + countByStatus('under_review') + countByStatus('approved'),
               language
             )}
@@ -166,7 +166,7 @@ export default function DashboardPage() {
             {language === 'bn' ? 'স্থগিত (বিরোধ সনাক্ত)' : 'Held / Conflicts'}
           </p>
           <p className="text-2xl font-black text-amber-700 dark:text-amber-400 mt-1">
-            {formatNumber(countByStatus('held'), language)}
+            {formatCount(countByStatus('held'), language)}
           </p>
         </div>
 
@@ -175,7 +175,7 @@ export default function DashboardPage() {
             {language === 'bn' ? 'চূড়ান্ত নিষ্পত্তিকৃত' : 'Finalized'}
           </p>
           <p className="text-2xl font-black text-blue-700 dark:text-blue-400 mt-1">
-            {formatNumber(countByStatus('finalized'), language)}
+            {formatCount(countByStatus('finalized'), language)}
           </p>
         </div>
       </div>
@@ -275,7 +275,7 @@ export default function DashboardPage() {
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 font-bold text-[11px] border border-rose-300 dark:border-rose-800">
                             <span>⚠️</span>
                             <span>
-                              {formatNumber(findingsCount, language)} {language === 'bn' ? 'টি অসঙ্গতি' : 'finding(s)'}
+                              {formatCount(findingsCount, language)} {language === 'bn' ? 'টি অসঙ্গতি' : 'finding(s)'}
                             </span>
                           </span>
                         ) : (

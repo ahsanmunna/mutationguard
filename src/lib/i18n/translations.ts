@@ -52,6 +52,15 @@ export function formatNumber(val: number | string, lang: Language): string {
 }
 
 /**
+ * Formats a whole number (counts, block numbers, step numbers) with localized digits
+ * and NO decimals. Use formatNumber() only for areas, which keep two decimals.
+ */
+export function formatCount(val: number | string, lang: Language): string {
+  const numStr = String(val);
+  return lang === 'bn' ? toBengaliDigits(numStr) : numStr;
+}
+
+/**
  * Formats a date string with localized digits.
  */
 export function formatDate(dateStr: string, lang: Language): string {

@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useLanguage } from '@/components/LanguageContext';
 import { DEMO_COOKIE_NAME, SEEDED_USERS } from '@/lib/auth-types';
-import { formatNumber, localName } from '@/lib/i18n/translations';
+import { localName, formatCount } from '@/lib/i18n/translations';
 
 export default function IntegrityPage() {
   const { t, language } = useLanguage();
@@ -37,7 +37,7 @@ export default function IntegrityPage() {
           ? `দলিল ${verification.record_id} এর "${verification.field}" ফিল্ডে পরিবর্তন ধরা পড়েছে`
           : `Deed ${verification.record_id} was altered: field "${verification.field}" no longer matches its anchor`
         : language === 'bn'
-        ? `ব্লক সিকোয়েন্স #${formatNumber(verification.sequence_num, language)} এর "${verification.field}" ফিল্ডে চেইন বিচ্ছিন্ন`
+        ? `ব্লক সিকোয়েন্স #${formatCount(verification.sequence_num, language)} এর "${verification.field}" ফিল্ডে চেইন বিচ্ছিন্ন`
         : `Broken at block sequence #${verification.sequence_num} on field "${verification.field}"`
       : '';
 
@@ -173,7 +173,7 @@ export default function IntegrityPage() {
                 <p className="text-xs opacity-90 mt-0.5">
                   {verification.valid
                     ? language === 'bn'
-                      ? `মোট ব্লক: ${formatNumber(verification.total_records, language)} • যাচাইকৃত দলিল: ${formatNumber(verification.deeds_checked ?? 0, language)} • হেড হ্যাশ: ${verification.latest_hash?.slice(0, 16)}...`
+                      ? `মোট ব্লক: ${formatCount(verification.total_records, language)} • যাচাইকৃত দলিল: ${formatCount(verification.deeds_checked ?? 0, language)} • হেড হ্যাশ: ${verification.latest_hash?.slice(0, 16)}...`
                       : `Total Blocks: ${verification.total_records} • Deeds Checked: ${verification.deeds_checked ?? 0} • Head Hash: ${verification.latest_hash?.slice(0, 16)}...`
                     : failureSummary}
                 </p>
@@ -261,7 +261,7 @@ export default function IntegrityPage() {
             <span>⛓️</span>
             <span>
               {language === 'bn'
-                ? `সার্বজনীন অডিট সিকোয়েন্স (${formatNumber(records.length, language)} টি ব্লক)`
+                ? `সার্বজনীন অডিট সিকোয়েন্স (${formatCount(records.length, language)} টি ব্লক)`
                 : `Global Audit Sequence (${records.length} Blocks)`}
             </span>
           </h3>
@@ -288,7 +288,7 @@ export default function IntegrityPage() {
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-2.5">
                   <div className="flex items-center gap-2">
                     <span className="w-7 h-7 rounded-lg bg-slate-900 dark:bg-slate-800 text-white font-mono font-bold flex items-center justify-center text-[11px]">
-                      #{formatNumber(block.sequence_num, language)}
+                      #{formatCount(block.sequence_num, language)}
                     </span>
                     <span className="font-bold text-slate-900 dark:text-white uppercase">
                       {block.event_type}

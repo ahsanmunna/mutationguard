@@ -6,7 +6,7 @@ import Link from 'next/link';
 import StatusBadge from '@/components/StatusBadge';
 import ConflictAlert from '@/components/ConflictAlert';
 import { useLanguage } from '@/components/LanguageContext';
-import { localName, formatNumber, formatDate } from '@/lib/i18n/translations';
+import { localName, formatNumber, formatDate, formatCount } from '@/lib/i18n/translations';
 import { DEMO_COOKIE_NAME, SEEDED_USERS } from '@/lib/auth-types';
 
 export default function TransferDetailPage() {
@@ -220,7 +220,7 @@ export default function TransferDetailPage() {
                   }`}
                 >
                   <span className="text-[11px] font-mono">
-                    {stStatus === 'completed' ? '✓' : formatNumber(i + 1, language)}
+                    {stStatus === 'completed' ? '✓' : formatCount(i + 1, language)}
                   </span>
                   <span className="font-bold">
                     {language === 'bn' ? st.labelBn : st.labelEn}

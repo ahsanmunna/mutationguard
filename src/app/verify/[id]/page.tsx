@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import StatusBadge from '@/components/StatusBadge';
 import { useLanguage } from '@/components/LanguageContext';
-import { localName, formatNumber, formatDate } from '@/lib/i18n/translations';
+import { localName, formatNumber, formatDate, formatCount } from '@/lib/i18n/translations';
 
 export default function PublicVerifyPage() {
   const params = useParams();
@@ -220,7 +220,7 @@ export default function PublicVerifyPage() {
             {integrity.status === 'OK' ? (
               <p className="text-[11px] opacity-80">
                 {language === 'bn'
-                  ? `${formatNumber(integrity.total_records ?? 0, language)} টি অডিট ব্লক পুনরায় গণনা করে যাচাই করা হয়েছে।`
+                  ? `${formatCount(integrity.total_records ?? 0, language)} টি অডিট ব্লক পুনরায় গণনা করে যাচাই করা হয়েছে।`
                   : `${integrity.total_records ?? 0} audit blocks were recomputed and checked.`}
               </p>
             ) : (
@@ -270,7 +270,7 @@ export default function PublicVerifyPage() {
               <span>🏛️</span>
               <span>
                 {language === 'bn'
-                  ? `চূড়ান্ত অডিট ব্লক #${formatNumber(finalization_audit_record.sequence_num, language)} নিশ্চিতকৃত`
+                  ? `চূড়ান্ত অডিট ব্লক #${formatCount(finalization_audit_record.sequence_num, language)} নিশ্চিতকৃত`
                   : `Finalization Audit Block #${finalization_audit_record.sequence_num} Confirmed`}
               </span>
             </div>
