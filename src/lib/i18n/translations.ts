@@ -1,19 +1,87 @@
 export type Language = 'bn' | 'en';
 
+/**
+ * Fictional demo persons dictionary for Bangla/English localization.
+ * Hackathon rules: All data is dummy/fictional.
+ */
+export const BANGLA_NAMES: Record<string, string> = {
+  'Farhan Ahmed (AC Land)': 'ফারহান আহমেদ (সহকারী কমিশনার ভূমি)',
+  'Rahim Uddin': 'রহিম উদ্দিন',
+  'Karim Chowdhury': 'করিম চৌধুরী',
+  'Hasan Mahmud': 'হাসান মাহমুদ',
+  'Abdul Maleque': 'আব্দুল মালেক',
+  'Nasima Akter': 'নাসিমা আক্তার',
+  'Shamsul Haque': 'শামসুল হক',
+  'Tariqul Islam': 'তারিকুল ইসলাম',
+  'Nasreen Akhtar': 'নাসরিন আক্তার',
+  'Rafiqul Alam': 'রফিকুল আলম',
+  'Zubair Hossain': 'জুবায়ের হোসেন',
+  'MutationGuard System Audit': 'মিউটেশনগার্ড সিস্টেম অডিট',
+  'Original State Allotment': 'মূল সরকারি বন্দোবস্ত',
+  'Abul Kashem': 'আবুল কাশেম',
+  'Altaf Hossain': 'আলতাফ হোসেন',
+  'Anisur Rahman': 'আনিসুর রহমান',
+  'Farida Begum': 'ফরিদা বেগম',
+};
+
+/**
+ * Helper to display owner/seller/buyer names in Bangla when language is 'bn'.
+ */
+export function localName(name: string | undefined | null, lang: Language): string {
+  if (!name) return '';
+  if (lang === 'bn' && BANGLA_NAMES[name]) {
+    return BANGLA_NAMES[name];
+  }
+  return name;
+}
+
+/**
+ * Helper to convert English digits to Bengali digits.
+ */
+export function toBengaliDigits(input: string | number): string {
+  const bengaliDigits = ['০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯'];
+  return String(input).replace(/[0-9]/g, (w) => bengaliDigits[+w]);
+}
+
+/**
+ * Formats a decimal number with localized digits.
+ */
+export function formatNumber(val: number | string, lang: Language): string {
+  const numStr = typeof val === 'number' ? val.toFixed(2) : String(val);
+  return lang === 'bn' ? toBengaliDigits(numStr) : numStr;
+}
+
+/**
+ * Formats a date string with localized digits.
+ */
+export function formatDate(dateStr: string, lang: Language): string {
+  if (!dateStr) return '';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    const formatted = d.toISOString().split('T')[0];
+    return lang === 'bn' ? toBengaliDigits(formatted) : formatted;
+  } catch {
+    return dateStr;
+  }
+}
+
 export const translations = {
   bn: {
     app_title: 'মিউটেশনগার্ড (MutationGuard)',
     app_subtitle: 'ভূমি নামজারি ও দ্বৈত হস্তান্তর সনাক্তকরণ এবং অপরিবর্তনীয় অডিট ট্রেইল সিস্টেম',
     nav_home: 'হোম',
-    nav_dashboard: 'ড্যাশবোর্ড',
-    nav_submit: 'নামজারি আবেদন',
+    nav_dashboard: 'পর্যালোচনা কিউ',
+    nav_submit: 'নতুন নামজারি আবেদন',
     nav_integrity: 'অডিট নিরীক্ষা',
     nav_demo: 'ডেমো প্যানেল',
+    nav_login: 'লগইন',
+    nav_logout: 'লগআউট',
     role_label: 'বর্তমান ব্যবহারকারী:',
-    switch_role: 'রোল পরিবর্তন করুন',
+    switch_role: 'ব্যবহারকারী পরিবর্তন',
     lang_toggle: 'English',
     demo_badge: 'ডেমো সংস্করণ (Stage A)',
-    demo_footer_note: 'সতর্কতা: এটি একটি পরীক্ষামূলক একাডেমিক প্রোটোটাইপ। সব তথ্য কাল্পনিক।',
+    demo_footer_note: 'সতর্কতা: এটি একটি পরীক্ষামূলক একাডেমিক প্রোটোটাইপ। সকল তথ্য কাল্পনিক।',
     status_submitted: 'দাখিলকৃত (Submitted)',
     status_verified: 'যাচাইকৃত (Verified)',
     status_under_review: 'পর্যালোচনাধীন (Under Review)',
@@ -41,8 +109,10 @@ export const translations = {
     nav_submit: 'New Mutation',
     nav_integrity: 'Audit Integrity',
     nav_demo: 'Demo Panel',
+    nav_login: 'Login',
+    nav_logout: 'Logout',
     role_label: 'Current User:',
-    switch_role: 'Switch Role',
+    switch_role: 'Switch User',
     lang_toggle: 'বাংলা',
     demo_badge: 'Demo Mode (Stage A)',
     demo_footer_note: 'Notice: This is an academic test prototype. All data is fictional.',

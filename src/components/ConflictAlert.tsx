@@ -79,8 +79,10 @@ export default function ConflictAlert({ findings }: ConflictAlertProps) {
               </span>
             </div>
 
-            <div className="font-medium text-slate-800 dark:text-slate-200 whitespace-pre-line bg-white/70 dark:bg-slate-900/60 p-2.5 rounded border border-rose-100 dark:border-rose-900/40">
-              {finding.evidence}
+            <div className="font-medium text-slate-800 dark:text-slate-200 whitespace-pre-line bg-white/70 dark:bg-slate-900/60 p-2.5 rounded border border-rose-100 dark:border-rose-900/40 font-mono text-xs">
+              {typeof finding.evidence === 'object'
+                ? (finding.evidence.message ? `${finding.evidence.message}\n${JSON.stringify(finding.evidence, null, 2)}` : JSON.stringify(finding.evidence, null, 2))
+                : String(finding.evidence)}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-1 font-mono text-[11px]">
