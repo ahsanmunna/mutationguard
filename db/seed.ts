@@ -3,31 +3,7 @@ import { getPool, closePool } from './index';
 import { verifyDatabaseSafety, sanitizeErrorMessage } from './safety';
 import { generateEd25519KeyPair } from '../src/lib/crypto/signature';
 import { appendAuditEvent } from '../src/lib/audit/ledger';
-import { sha256 } from '../src/lib/crypto/hasher';
-
-// ---------------------------------------------------------------------------
-// Deed anchor hash – canonical JSON sorted by key, SHA-256
-// area_decimal serialised as a fixed 2-decimal string so hash is reproducible.
-// ---------------------------------------------------------------------------
-export function calculateDeedHash(data: {
-  deed_number: string;
-  parcel_id: string;
-  seller_name: string;
-  buyer_name: string;
-  mouza: string;
-  khatian: string;
-  dag: string;
-  area_decimal: number;
-  deed_date: string; // 'YYYY-MM-DD'
-}): string {
-  // Normalise area to exactly 2 decimal places so the hash is deterministic.
-  const normalised = {
-    ...data,
-    area_decimal: Number(data.area_decimal).toFixed(2),
-  };
-  // sha256() calls canonicalJsonStringify internally (sorted keys).
-  return sha256(normalised);
-}
+import { buildDeedAnchor } from '../src/lib/audit/deed';
 
 // ---------------------------------------------------------------------------
 // Seed runner
@@ -219,16 +195,16 @@ export async function runSeed(customPool?: any) {
       'NID-DEMO-0010', // Zubair Hossain
     ];
 
+    const systemKp = keypairs['system_audit'];
+
     for (let i = 0; i < deeds.length; i++) {
       const d = deeds[i];
-      const deedHash = calculateDeedHash(d);
-      // deed_json: canonical JSON string of the deed fields (stored for Phase 2 integrity)
-      const deedJson = JSON.stringify(
-        Object.keys(d).sort().reduce((acc, k) => {
-          (acc as any)[k] = (d as any)[k];
-          return acc;
-        }, {} as any)
-      );
+      // ONE shared function builds the canonical deed JSON + hash (see src/lib/audit/deed.ts).
+      const anchor = buildDeedAnchor({
+        ...d,
+        seller_nid: sellerNids[i],
+        buyer_nid:  buyerNids[i],
+      });
 
       await client.query(
         `INSERT INTO deeds (deed_number, parcel_id, seller_name, seller_nid, buyer_name, buyer_nid,
@@ -237,15 +213,28 @@ export async function runSeed(customPool?: any) {
         [
           d.deed_number, d.parcel_id, d.seller_name, sellerNids[i],
           d.buyer_name,  buyerNids[i], d.mouza, d.khatian, d.dag,
-          d.area_decimal, d.deed_date, deedHash, deedJson,
+          d.area_decimal, d.deed_date, anchor.deed_hash, anchor.deed_json,
         ]
+      );
+
+      // Anchor the deed in the tamper-evident audit chain.
+      await appendAuditEvent(
+        client,
+        {
+          event_type:     'DEED_ANCHORED',
+          entity_id:      d.deed_number,
+          entity_type:    'deed',
+          actor_username: 'system_audit',
+          actor_role:     'system',
+          payload:        { deed_number: d.deed_number, deed_hash: anchor.deed_hash, deed_json: anchor.deed_json },
+        },
+        systemKp.privateKey
       );
     }
 
     // -----------------------------------------------------------------------
     // Write initial DEMO_SEEDED audit event — signed with system_audit's key
     // -----------------------------------------------------------------------
-    const systemKp = keypairs['system_audit'];
     await appendAuditEvent(
       client,
       {

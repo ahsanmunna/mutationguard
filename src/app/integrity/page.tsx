@@ -29,6 +29,18 @@ export default function IntegrityPage() {
   };
   const isReviewer = currentUser.role === 'reviewer';
 
+  // One-line explanation of the FIRST failure, for a chain block or for a deed.
+  const failureSummary =
+    verification && !verification.valid
+      ? verification.kind === 'deed'
+        ? language === 'bn'
+          ? `দলিল ${verification.record_id} এর "${verification.field}" ফিল্ডে পরিবর্তন ধরা পড়েছে`
+          : `Deed ${verification.record_id} was altered: field "${verification.field}" no longer matches its anchor`
+        : language === 'bn'
+        ? `ব্লক সিকোয়েন্স #${formatNumber(verification.sequence_num, language)} এর "${verification.field}" ফিল্ডে চেইন বিচ্ছিন্ন`
+        : `Broken at block sequence #${verification.sequence_num} on field "${verification.field}"`
+      : '';
+
   const runVerification = async () => {
     try {
       setLoading(true);
@@ -69,6 +81,30 @@ export default function IntegrityPage() {
       if (res.ok) {
         setTamperMessage(data.message);
         // Re-run verification to immediately show the red broken state
+        await runVerification();
+      } else {
+        setTamperMessage(`Error: ${data.error}`);
+      }
+    } catch (err: any) {
+      setTamperMessage(`Error: ${err.message}`);
+    } finally {
+      setTampering(false);
+    }
+  };
+
+  // DEMO: edit a deed's area directly in OUR OWN database, then re-run the check.
+  const handleDeedTamper = async () => {
+    try {
+      setTampering(true);
+      setTamperMessage(null);
+      const res = await fetch('/api/audit/tamper', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target: 'deed', deed_number: 'DEED-2026-001' }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setTamperMessage(data.message);
         await runVerification();
       } else {
         setTamperMessage(`Error: ${data.error}`);
@@ -137,11 +173,9 @@ export default function IntegrityPage() {
                 <p className="text-xs opacity-90 mt-0.5">
                   {verification.valid
                     ? language === 'bn'
-                      ? `মোট ব্লক: ${formatNumber(verification.total_records, language)} • হেড হ্যাশ: ${verification.latest_hash?.slice(0, 16)}...`
-                      : `Total Blocks: ${verification.total_records} • Head Hash: ${verification.latest_hash?.slice(0, 16)}...`
-                    : language === 'bn'
-                    ? `ব্লক সিকোয়েন্স #${formatNumber(verification.sequence_num, language)} এর "${verification.field}" ফিল্ডে চেইন বিচ্ছিন্ন`
-                    : `Broken at block sequence #${verification.sequence_num} on field "${verification.field}"`}
+                      ? `মোট ব্লক: ${formatNumber(verification.total_records, language)} • যাচাইকৃত দলিল: ${formatNumber(verification.deeds_checked ?? 0, language)} • হেড হ্যাশ: ${verification.latest_hash?.slice(0, 16)}...`
+                      : `Total Blocks: ${verification.total_records} • Deeds Checked: ${verification.deeds_checked ?? 0} • Head Hash: ${verification.latest_hash?.slice(0, 16)}...`
+                    : failureSummary}
                 </p>
               </div>
             </div>
@@ -197,6 +231,28 @@ export default function IntegrityPage() {
           </span>
         </div>
       )}
+
+      {/* Demo: tamper with a deed record */}
+      <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="text-xs space-y-0.5">
+          <div className="font-bold text-slate-900 dark:text-white">
+            {language === 'bn' ? 'দলিল টেম্পারিং পরীক্ষা (ডেমো)' : 'Deed tamper test (demo)'}
+          </div>
+          <div className="text-slate-500 dark:text-slate-400">
+            {language === 'bn'
+              ? 'আমাদের নিজস্ব ডাটাবেসে সরাসরি দলিল DEED-2026-001 এর জমির পরিমাণ ২.০০ শতক বাড়ানো হবে, তারপর যাচাই চালান।'
+              : 'Edits the area of DEED-2026-001 directly in our own database (+2.00 decimal), then re-runs the check.'}
+          </div>
+        </div>
+        <button
+          onClick={handleDeedTamper}
+          disabled={tampering}
+          className="min-h-[44px] px-4 py-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-bold hover:bg-rose-100 transition inline-flex items-center justify-center gap-1.5 shrink-0 disabled:opacity-50"
+        >
+          <span>🧪</span>
+          <span>{language === 'bn' ? 'দলিলে টেম্পারিং করুন' : 'Tamper with deed'}</span>
+        </button>
+      </div>
 
       {/* Audit Blocks Sequence Explorer */}
       <div className="space-y-4">

@@ -60,7 +60,7 @@ export default function PublicVerifyPage() {
     );
   }
 
-  const { transfer, deed, finalization_audit_record, is_deed_anchored, qr_code_data_url } = data;
+  const { transfer, deed, parcel, ownership_history, integrity, finalization_audit_record, is_deed_anchored, qr_code_data_url } = data;
 
   return (
     <div className="max-w-3xl mx-auto space-y-6 py-4 px-1">
@@ -164,6 +164,79 @@ export default function PublicVerifyPage() {
             </div>
           </div>
         </div>
+
+        {/* Current owner and ownership history of the parcel */}
+        <div className="space-y-3 text-xs">
+          <h3 className="font-bold text-slate-900 dark:text-white uppercase tracking-wider text-[11px] border-b pb-1">
+            {language === 'bn' ? 'বর্তমান মালিক ও মালিকানার ইতিহাস' : 'Current Owner & Ownership History'}
+          </h3>
+          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60">
+            <span className="text-slate-500 block">{language === 'bn' ? 'বর্তমান মালিক:' : 'Current Owner:'}</span>
+            <span className="font-bold text-slate-900 dark:text-white">
+              {parcel?.current_owner_name ? localName(parcel.current_owner_name, language) : '—'}
+            </span>
+          </div>
+          {Array.isArray(ownership_history) && ownership_history.length > 0 ? (
+            <ol className="space-y-2 border-l-2 border-emerald-300 dark:border-emerald-800 pl-3">
+              {ownership_history.map((h: any, i: number) => (
+                <li key={i} className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60">
+                  <div className="font-semibold text-slate-900 dark:text-white">
+                    {localName(h.previous_owner_name, language)} → {localName(h.new_owner_name, language)}
+                  </div>
+                  <div className="text-[11px] text-slate-500 font-mono">
+                    {h.deed_number} • {formatDate(h.recorded_at, language)}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="text-slate-500">
+              {language === 'bn' ? 'এখনো কোনো মালিকানা পরিবর্তন নথিভুক্ত হয়নি।' : 'No ownership changes recorded yet.'}
+            </p>
+          )}
+        </div>
+
+        {/* Audit trail + deed integrity status for THIS record (real recomputation) */}
+        {integrity && (
+          <div
+            className={`p-4 rounded-2xl border text-xs space-y-1.5 ${
+              integrity.status === 'OK'
+                ? 'bg-emerald-50/80 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200'
+                : 'bg-rose-50/80 dark:bg-rose-950/40 border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-200'
+            }`}
+          >
+            <div className="flex items-center gap-2 font-bold text-sm">
+              <span>{integrity.status === 'OK' ? '✅' : '🚨'}</span>
+              <span>
+                {integrity.status === 'OK'
+                  ? language === 'bn'
+                    ? 'অডিট চেইন ও দলিল যাচাই সফল (OK)'
+                    : 'Audit trail and deed verified (OK)'
+                  : language === 'bn'
+                  ? 'যাচাই ব্যর্থ (FAIL): পরিবর্তনের চিহ্ন পাওয়া গেছে'
+                  : 'Verification FAILED: signs of alteration found'}
+              </span>
+            </div>
+            {integrity.status === 'OK' ? (
+              <p className="text-[11px] opacity-80">
+                {language === 'bn'
+                  ? `${formatNumber(integrity.total_records ?? 0, language)} টি অডিট ব্লক পুনরায় গণনা করে যাচাই করা হয়েছে।`
+                  : `${integrity.total_records ?? 0} audit blocks were recomputed and checked.`}
+              </p>
+            ) : (
+              <p className="text-[11px] font-mono">
+                {integrity.failure?.record_id} • {integrity.failure?.field} •{' '}
+                {integrity.failure_belongs_to_this_record
+                  ? language === 'bn'
+                    ? 'এই রেকর্ডের সঙ্গে সম্পর্কিত'
+                    : 'involves this record'
+                  : language === 'bn'
+                  ? 'অন্য একটি রেকর্ডে'
+                  : 'in a different record'}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Cryptographic Deed Anchor Integrity */}
         <div

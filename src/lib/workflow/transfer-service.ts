@@ -22,8 +22,7 @@ import { evaluateAllRules } from '../rules/engine';
 import { appendAuditEvent } from '../audit/ledger';
 import { UserSession } from '../auth';
 import { ConflictError, NotFoundError } from '../errors';
-import { calculateDeedAnchorHash } from '../crypto/hasher';
-import { canonicalJsonStringify } from '../crypto/hasher';
+import { buildDeedAnchor } from '../audit/deed';
 
 // ---------------------------------------------------------------------------
 // Optional inline deed fields (Phase 3: POST body can include deed data)
@@ -82,30 +81,10 @@ export async function createTransfer(
 
   // 1. Optionally insert deed inline (atomic with transfer creation)
   if (inlineDeed) {
-    const deedHash = calculateDeedAnchorHash({
-      deed_number:  inlineDeed.deed_number,
-      parcel_id:    inlineDeed.parcel_id,
-      seller_name:  inlineDeed.seller_name,
-      buyer_name:   inlineDeed.buyer_name,
-      mouza:        inlineDeed.mouza,
-      khatian:      inlineDeed.khatian,
-      dag:          inlineDeed.dag,
-      area_decimal: inlineDeed.area_decimal,
-      deed_date:    inlineDeed.deed_date,
-    });
-
-    // deed_json: canonical JSON of deed fields (sorted keys)
-    const deedJson = canonicalJsonStringify({
-      area_decimal: Number(inlineDeed.area_decimal).toFixed(2),
-      buyer_name:   inlineDeed.buyer_name,
-      dag:          inlineDeed.dag,
-      deed_date:    inlineDeed.deed_date,
-      deed_number:  inlineDeed.deed_number,
-      khatian:      inlineDeed.khatian,
-      mouza:        inlineDeed.mouza,
-      parcel_id:    inlineDeed.parcel_id,
-      seller_name:  inlineDeed.seller_name,
-    });
+    // ONE shared function builds the canonical deed JSON + hash (see src/lib/audit/deed.ts).
+    const anchor = buildDeedAnchor(inlineDeed);
+    const deedHash = anchor.deed_hash;
+    const deedJson = anchor.deed_json;
 
     // Plain INSERT (no ON CONFLICT): a duplicate deed number must be REJECTED. Before, it was
     // silently ignored and the rules then ran against the OLD deed, not the submitted data.
@@ -131,6 +110,20 @@ export async function createTransfer(
       }
       throw err;
     }
+    // Anchor the new deed in the tamper-evident audit chain (same transaction as the insert).
+    await appendAuditEvent(
+      client,
+      {
+        event_type:     'DEED_ANCHORED',
+        entity_id:      inlineDeed.deed_number,
+        entity_type:    'deed',
+        actor_username: actor.username,
+        actor_role:     actor.role,
+        payload:        { deed_number: inlineDeed.deed_number, deed_hash: deedHash, deed_json: deedJson },
+      },
+      actorPrivKey
+    );
+
     // Point application at the newly-inserted deed
     application = { ...application, deed_number: inlineDeed.deed_number };
   }

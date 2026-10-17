@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/../db';
-import { verifyDeedAnchor } from '@/lib/audit/ledger';
+import { verifyAuditChain } from '@/lib/audit/ledger';
+import { verifyDeedAnchors } from '@/lib/audit/integrity';
+import { handleApiError } from '@/lib/api-errors';
+import { NotFoundError } from '@/lib/errors';
 import { generateQrCodeDataUrl } from '@/lib/qrcode/generator';
 
 /**
@@ -8,7 +11,8 @@ import { generateQrCodeDataUrl } from '@/lib/qrcode/generator';
  *
  * GET /api/public/verify/[id]
  * Allows any citizen or authority to independently verify a land mutation,
- * its deed anchor hash, finalization record, and tamper-evident audit status.
+ * its deed anchor, ownership history and tamper-evident audit status.
+ * Only public fields are returned (no keys, no hashes of private data).
  */
 export async function GET(
   req: NextRequest,
@@ -40,7 +44,7 @@ export async function GET(
     );
 
     if (transferRes.rowCount === 0) {
-      return NextResponse.json({ error: 'Transfer record not found' }, { status: 404 });
+      throw new NotFoundError('Transfer record not found');
     }
 
     const row = transferRes.rows[0];
@@ -56,22 +60,49 @@ export async function GET(
     );
     const finalizationRecord = auditRes.rows[0] || null;
 
-    // 3. Verify deed anchor
-    const deedForVerification = {
-      deed_number: row.deed_number,
-      parcel_id: row.parcel_id,
-      seller_name: row.deed_seller_name || row.seller_name,
-      buyer_name: row.deed_buyer_name || row.buyer_name,
-      mouza: row.deed_mouza || row.application_mouza,
-      khatian: row.deed_khatian || row.application_khatian,
-      dag: row.deed_dag || row.application_dag,
-      area_decimal: row.deed_area || row.application_area_decimal,
-      deed_date: row.registry_deed_date ? new Date(row.registry_deed_date).toISOString().split('T')[0] : '',
-      deed_hash: row.deed_hash,
-    };
-    const isDeedAnchored = verifyDeedAnchor(deedForVerification);
+    // 3. Ownership history of the parcel (oldest first)
+    const historyRes = await pool.query(
+      `SELECT previous_owner_name, new_owner_name, transfer_id, deed_number, recorded_at
+       FROM ownership_history
+       WHERE parcel_id = $1
+       ORDER BY recorded_at ASC, id ASC;`,
+      [row.parcel_id]
+    );
 
-    // 4. Generate QR code pointing to public verification page
+    // 4. Real integrity check for THIS record: the whole chain must verify AND this
+    //    transfer's deed must still match the anchor stored in the chain.
+    const chain = await verifyAuditChain(pool);
+    const deedCheck = await verifyDeedAnchors(pool, row.deed_number);
+
+    let failure: { kind: 'chain' | 'deed'; record_id: string; field: string } | null = null;
+    let belongsToThisRecord = false;
+
+    if (!chain.valid) {
+      failure = { kind: 'chain', record_id: `Block #${chain.sequence_num}`, field: chain.field };
+      const failingBlock = await pool.query(
+        'SELECT entity_id FROM audit_ledger WHERE sequence_num = $1;',
+        [chain.sequence_num]
+      );
+      const entity = failingBlock.rows[0]?.entity_id;
+      belongsToThisRecord =
+        entity === row.id || entity === row.deed_number || entity === row.parcel_id;
+    } else if (deedCheck.failure) {
+      failure = { kind: 'deed', record_id: deedCheck.failure.record_id, field: deedCheck.failure.field };
+      belongsToThisRecord = true; // we only checked THIS transfer's deed
+    }
+
+    const integrityOk = failure === null;
+    const integrity = {
+      status: integrityOk ? 'OK' : 'FAIL',
+      chain_valid: chain.valid,
+      deed_valid: deedCheck.failure === null,
+      total_records: chain.valid ? chain.total_records : null,
+      failure,
+      failure_belongs_to_this_record: belongsToThisRecord,
+    };
+    const isDeedAnchored = chain.valid && deedCheck.failure === null && deedCheck.deeds_checked === 1;
+
+    // 5. Generate QR code pointing to public verification page
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
     const verifyUrl = `${appUrl}/verify/${id}`;
     let qrCodeDataUrl = '';
@@ -114,12 +145,14 @@ export async function GET(
         deed_hash: row.deed_hash,
         is_anchored: isDeedAnchored,
       },
+      ownership_history: historyRes.rows,
+      integrity,
       finalization_audit_record: finalizationRecord,
       is_deed_anchored: isDeedAnchored,
       verification_url: verifyUrl,
       qr_code_data_url: qrCodeDataUrl,
     });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err) {
+    return handleApiError(err, 'GET /api/public/verify/[id]');
   }
 }
