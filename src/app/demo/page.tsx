@@ -74,7 +74,11 @@ export default function DemoPage() {
       const data = await res.json();
       if (res.ok) {
         setResetStatus('success');
+        setStepStatus({});
+        setStatusLog([]);
+        setConcurrentState('idle');
         setConcurrentResults(null);
+        await fetchParcels();
         addLog(
           language === 'bn'
             ? '✅ ডাটাবেস সফলভাবে প্রাথমিক সিড অবস্থায় রিসেট করা হয়েছে।'
