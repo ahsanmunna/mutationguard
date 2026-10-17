@@ -1,39 +1,43 @@
-# MutationGuard — Stage A Technical Hand-Off Document
+# MutationGuard — Stage A Technical Hand-Off Document (Hackathon 2026)
 
 > **MutationGuard** is an automated land mutation conflict detection engine, ownership verification system, and tamper-evident cryptographic audit ledger built with Next.js App Router, TypeScript, Tailwind CSS, and raw PostgreSQL (`pg`).
+>
+> Built for the **LandTech Innovation Hackathon 2026** (DIU, Bangladesh).
 
 ---
 
 ## 1. Project Overview & Architecture
 
 MutationGuard guarantees land title integrity by combining three layers of defense:
-1. **Rule Engine**: Deterministic detection without speculative AI or probabilistic risk scores.
-2. **Database Concurrency Guard**: A PostgreSQL partial unique index that physically blocks concurrent active mutation applications on the same parcel.
-3. **Cryptographic Audit Ledger**: An immutable SHA-256 hash chain with Ed25519 digital signatures and transaction-scoped PostgreSQL advisory locks (`pg_advisory_xact_lock`).
+1. **Rule Engine**: Three deterministic detection rules (`DOUBLE_SALE`, `WRONG_SELLER`, `RECORD_MISMATCH`) without speculative AI or probabilistic risk scores.
+2. **Database Concurrency Guard**: A PostgreSQL partial unique index (`one_active_transfer_per_parcel`) that physically blocks concurrent active mutation applications on the same parcel at the storage engine level.
+3. **Cryptographic Audit Ledger**: An immutable SHA-256 hash chain with per-user Ed25519 digital signatures and transaction-scoped PostgreSQL advisory locks (`pg_advisory_xact_lock`).
 
 ---
 
-## 2. Seven Preserved Screens
+## 2. Seven Preserved Screens & New Capabilities
 
-1. **Screen 1: System Overview & Landing (`/`)**
-   - Architectural summary, interactive cards explaining the three rules, and navigation.
-2. **Screen 2: New Mutation Application (`/transfers/new`)**
-   - Submission form with pre-set buttons for demo scenarios (Karim clean, Hasan double sale, P-002 record mismatch, wrong seller).
-   - Instant 3-rule feedback upon submission.
-3. **Screen 3: Transfer Review & AC Land Action Panel (`/transfers/[id]`)**
-   - Full record view, automated findings breakdown, Deed vs Registry comparison, and workflow progression controls.
-4. **Screen 4: Reviewer Queue & Dashboard (`/dashboard`)**
-   - Filterable table of all applications (`all`, `verified`, `held`, `under_review`, `approved`, `finalized`, `rejected`) with summary metrics.
-5. **Screen 5: Public Digital Verification Certificate (`/verify/[id]`)**
-   - Publicly accessible page with a scannable QR code and cryptographic Deed Anchor SHA-256 verification.
-6. **Screen 6: Cryptographic Audit Ledger Inspector (`/integrity`)**
-   - End-to-end chain verification button, broken chain detection with exact expected vs calculated diffs, block sequence explorer, and live tamper simulation button.
-7. **Screen 7: Student Demo & Presentation Control Panel (`/demo`)**
+1. **Screen 1: Landing Page (`/`)**
+   - Architectural summary, bilingual Bangla/English toggle, interactive cards explaining the three rules.
+2. **Screen 2: Login Persona Picker (`/login`)** *(New in Phase 4)*
+   - One-click login cards for AC Land Reviewer (`officer_farhan`), Land Owner (`rahim_uddin`), Buyer 1 (`karim_chowdhury`), and Conflicting Buyer 2 (`hasan_mahmud`).
+3. **Screen 3: New Mutation Application (`/transfers/new`)**
+   - Application form with 4 instant demo pre-fill buttons for presentation scenarios.
+   - Inline deed submission support.
+4. **Screen 4: Review Queue & Dashboard (`/dashboard`)**
+   - Role-aware: Reviewer sees entire review queue with quick action buttons (`Review`, `Approve`); Applicant sees only their own applications.
+5. **Screen 5: Transfer Detail & Reviewer Action Panel (`/transfers/[id]`)**
+   - 5-stage visual stepper (`submitted → verified → under_review → approved → finalized`), conflict alert box, Deed vs Registry comparison, and role-gated reviewer action controls.
+6. **Screen 6: Public Digital Verification Certificate (`/verify/[id]`)**
+   - Publicly accessible page (no login required) querying `/api/public/verify/[id]` with scannable QR code, Deed Anchor SHA-256 match, and printable certificate.
+7. **Screen 7: Cryptographic Audit Ledger Inspector (`/integrity`)**
+   - Reviewer-restricted console. Complete chain verification from genesis to head, detailed failure inspector (expected vs calculated diffs), and live tamper simulation button.
+8. **Screen 8: Presentation Control Panel (`/demo`)**
    - Gated by `DEMO_MODE=true` and `reviewer` role. Guided step-by-step presentation runner with live execution log and clean seed database reset.
 
 ---
 
-## 3. Workflow State Machine & Lifecycle
+## 3. Workflow State Machine & Lifecycle (Phase 3 Strict Rules)
 
 ```
 [Citizen / Applicant Submits]
@@ -45,8 +49,9 @@ MutationGuard guarantees land title integrity by combining three layers of defen
       │ (No Findings) │ (Findings Detected)
       ▼               ▼
  [ verified ]      [ held ]
-      │               │ (Officer clears)
-      ├───────────────┘
+      │               │
+      │               ▼
+      │          [ rejected ] (Terminal)
       ▼
 [ under_review ]
       │
@@ -54,13 +59,19 @@ MutationGuard guarantees land title integrity by combining three layers of defen
       ▼                      ▼
 [ approved ]           [ rejected ] (Terminal)
       │
-      ▼
-[ finalized ] (Terminal - Atomic DB Update)
+      ├──────────────────────┐
+      ▼                      ▼
+[ finalized ]          [ rejected ] (Terminal)
 ```
 
-- **Clean Submissions**: Submissions with zero findings automatically enter `verified`.
-- **Conflicting Submissions**: Submissions triggering any rule automatically enter `held`.
-- **Atomic Finalization**: Updating an approved transfer to `finalized` runs a single SQL transaction that:
+- **Submission Engine**: Submissions with zero findings become `verified`; submissions with findings become `held`.
+- **Reviewer Valid Transitions**:
+  - `verified → under_review`
+  - `under_review → approved | rejected`
+  - `approved → finalized | rejected`
+  - `held → rejected` (ONLY — held transfers cannot transition back to active)
+- **Blocked Transitions**: Return HTTP 409 and asynchronously write a committed `BLOCKED_TRANSITION` audit event in a separate transaction.
+- **Atomic Finalization**: Updating an approved transfer to `finalized` runs a single transaction with `FOR UPDATE` row locks on both transfer and parcel records:
   1. Updates transfer status to `finalized`.
   2. Updates `parcels` table (`current_owner_name` and `current_owner_nid`).
   3. Appends an entry into `ownership_history`.
@@ -68,13 +79,15 @@ MutationGuard guarantees land title integrity by combining three layers of defen
 
 ---
 
-## 4. The Three Detection Rules
+## 4. The Three Detection Rules (Phase 3 Structured Findings)
 
-| Rule ID | Trigger Condition | Evidence & Action |
-| :--- | :--- | :--- |
-| `DOUBLE_SALE` | An active transfer exists for the parcel in `('submitted', 'verified', 'under_review', 'approved')`. | Action: `hold`. Reports conflicting active transfer ID and applicant. |
-| `WRONG_SELLER` | Claimed seller name or NID does not match the officially recorded owner on the parcel in the land registry. | Action: `hold`. Reports expected owner vs observed seller. |
-| `RECORD_MISMATCH` | Compares Deed vs Registry (mouza, khatian, dag, area, seller) and Application vs Deed (khatian, dag, area). | Action: `hold`. Reports every single differing field with expected and observed values. |
+All findings produce a structured `evidence` object (no plain English sentences):
+
+| Rule ID | Trigger Condition | Structured Evidence Fields | Action |
+| :--- | :--- | :--- | :--- |
+| `DOUBLE_SALE` | An active transfer exists for the parcel in `('submitted', 'verified', 'under_review', 'approved')`. | `{ rule: 'DOUBLE_SALE', parcel_id, conflict_id, status, message }` | `hold` |
+| `WRONG_SELLER` | Claimed seller name or NID does not match the officially recorded owner on the parcel in the land registry. | `{ rule: 'WRONG_SELLER', parcel_id, name_mismatch, nid_mismatch, message }` | `hold` |
+| `RECORD_MISMATCH` | Compares Deed vs Registry (mouza, khatian, dag, area, seller) and Application vs Deed (khatian, dag, area). | `{ rule: 'RECORD_MISMATCH', total_mismatches, differing_fields: [{ field, source, expected, observed }] }` | `hold` |
 
 ---
 
@@ -90,91 +103,157 @@ WHERE status IN ('submitted', 'verified', 'under_review', 'approved');
 
 - Statuses `held`, `rejected`, and `finalized` are excluded.
 - If two concurrent requests attempt to submit for the same parcel simultaneously, PostgreSQL enforces this partial unique index.
-- In `src/lib/workflow/transfer-service.ts`, a transaction `SAVEPOINT` catches error code `23505` (`unique_violation`), rolls back safely, attaches the `DOUBLE_SALE` finding, and records the second transfer as `held`.
+- In `src/lib/workflow/transfer-service.ts`, a transaction `SAVEPOINT` catches error code `23505` (`unique_violation`), rolls back safely, attaches the `DOUBLE_SALE` structured finding, and records the second transfer as `held`.
 
 ---
 
-## 6. Cryptographic Audit Chain Specification
+## 6. Cryptographic Audit Chain Specification (Phase 2 Rewrite)
 
-- **Canonical JSON**: Object keys recursively sorted via `canonicalJsonStringify()` ensuring deterministic byte outputs.
-- **Payload Hash**: SHA-256 of canonical JSON payload.
-- **Chain Record Hash**: SHA-256 over `sequence_num | previous_hash | payload_hash | event_type | entity_id | actor_username | timestamp`.
-- **Ed25519 Digital Signatures**: Record hashes signed and verified using Node.js built-in `crypto` (`ed25519`).
+- **Pipe-Delimited Composite String**:
+  `sequence_num | actor_username | actor_role | event_type | entity_type | entity_id | payload_hash | previous_hash | timestamp`
+- **Canonical Payload**: Object keys recursively sorted via `canonicalJsonStringify()` stored as raw `TEXT` (not JSONB, avoiding PostgreSQL key reordering).
+- **TEXT Timestamps**: ISO-8601 strings stored as `TEXT` in database, preventing timezone roundtrip corruption during verification.
+- **Per-User Ed25519 Keypairs**: Generated at seed time and stored in `users.public_key` / `users.private_key`. In-memory singleton removed.
+- **Verification Against Users Table**: Signatures are verified against the actor's public key in the `users` table (never trust a key in the audit row itself).
 - **PostgreSQL Advisory Lock**: Audit writes acquire `SELECT pg_advisory_xact_lock(987654321)` to serialize sequence appends across concurrent threads.
-- **Chain Integrity Auditor**: Walks records in sequence, reporting the first broken link with `{ sequence_num, field, expected_value, calculated_value }`.
-- **Deed Anchor**: Immutable SHA-256 hash of core deed parameters stored in `deeds.deed_hash`.
+- **Deed Anchor**: Deterministic SHA-256 hash of canonical deed fields with area formatted to two decimal places. Verified via `verifyDeedAnchor()`.
 
 ---
 
-## 7. Stage A Authentication Stub (`src/lib/auth.ts`)
+## 7. Data Hygiene (Phase 1)
 
-> **Notice:** This is an isolated, temporary development stub designed for Stage A. Backend routes enforce role guards and log forbidden attempts. In Stage B, it will be replaced with cryptographically signed, HTTP-only sessions.
-
-- **Cookie Name**: `mg_demo_user`
-- **Seeded Accounts**:
-  - `officer_farhan` — Role: `reviewer` (Farhan Ahmed, AC Land)
-  - `rahim_uddin` — Role: `applicant` (NID: 1985000000001)
-  - `karim_chowdhury` — Role: `applicant` (NID: 1988000000002)
-  - `hasan_mahmud` — Role: `applicant` (NID: 1992000000003)
-  - `system_audit` — Role: `system`
-- Switch accounts on the fly using the interactive header dropdown.
+Hackathon Compliance: **All data is dummy/fictional.**
+- Realistic 13-digit NIDs have been replaced across all seeds, tests, presets, and demo scenarios with the `NID-DEMO-XXXX` format:
+  - `NID-DEMO-0001` — Rahim Uddin
+  - `NID-DEMO-0002` — Karim Chowdhury
+  - `NID-DEMO-0003` — Hasan Mahmud
+  - `NID-DEMO-0004` — Abdul Maleque
+  - `NID-DEMO-0005` — Nasima Akter (renamed from historical figure "Begum Rokeya")
+  - `NID-DEMO-0006` — Shamsul Haque
+  - `NID-DEMO-0007` — Tariqul Islam
+  - `NID-DEMO-0008` — Nasreen Akhtar
+  - `NID-DEMO-0009` — Rafiqul Alam
+  - `NID-DEMO-0010` — Zubair Hossain
+  - `NID-DEMO-REVIEWER-001` — Farhan Ahmed (AC Land)
+- Bengali localized display dictionary and helper `localName(name, lang)` added.
 
 ---
 
-## 8. Test Suite & Safety Enforcement
+## 8. Database Safety Guards
 
-### Test Safety Guard (`tests/setup.ts`)
-```typescript
-export async function assertTestDatabaseSafety(pool: Pool): Promise<void> {
-  const result = await pool.query('SELECT current_database() as db_name;');
-  const currentDb = result.rows[0]?.db_name;
-  if (currentDb !== 'antigravity_test') {
-    throw new Error(`FATAL SAFETY VIOLATION: Test connection is targeting "${currentDb}". Aborted.`);
-  }
-}
+- **Runtime Safety**: Runtime operations verify `SELECT current_database()` on the exact checked-out connection before any writes.
+- **Development Database**: Normal development allows only `antigravity_dev`.
+- **Test Database Guard (`tests/setup.ts`)**: Generic test safety guard requires:
+  1. `TEST_DATABASE_URL` must not equal `DATABASE_URL`.
+  2. Connected database name MUST end with `_test`.
+- **Write Confirmation**: CLI migrations and seeds require `MUTATIONGUARD_ALLOW_DB_WRITE=true`.
+
+---
+
+## 9. Actual Test & Build Verification Results
+
+### `npm run check` (Typecheck + Unit Tests)
+```
+> mutationguard@0.1.0 typecheck
+> tsc --noEmit
+(0 errors)
+
+> mutationguard@0.1.0 test
+> vitest run tests/unit
+
+ ✓ tests/unit/rules.test.ts (4 tests)
+ ✓ tests/unit/workflow.test.ts (2 tests)
+ ✓ tests/unit/crypto.test.ts (4 tests)
+ ✓ tests/unit/database-safety.test.ts (19 tests)
+
+ Test Files  4 passed (4)
+      Tests  29 passed (29)
+   Duration  2.39s
 ```
 
-### Running Tests
-```bash
-npm run test
+### `npm run lint` (ESLint)
 ```
-*Current test status: 5 test suites passed (24 tests passing, 0 failing).*
+> mutationguard@0.1.0 lint
+> next lint
+
+✔ No ESLint warnings or errors
+```
+
+### `npm run build` (Next.js Production Build)
+```
+> mutationguard@0.1.0 build
+> next build
+
+ ✓ Compiled successfully
+ ✓ Linting and checking validity of types
+ ✓ Generating static pages (18/18)
+ ✓ Finalizing page optimization
+
+18 routes compiled (Static and Dynamic) + Middleware (34.2 kB)
+```
+
+### `npm run test:db` (Concurrency / Real Database Tests)
+```
+> mutationguard@0.1.0 test:db
+> vitest run tests/concurrency
+
+FAIL tests/concurrency/double-sale.test.ts
+Error: DATABASE INTEGRATION TEST FAILURE: Database tables are not migrated! Apply migrations with "npm run db:migrate" before running database tests.
+```
+*(Fails loudly as required by Stage A specification when migrations have not yet been run by the user).*
 
 ---
 
-## 9. Database Setup Instructions (Run When Approved)
+## 10. Available NPM Scripts
 
-1. Open `.env.local` and enter your local PostgreSQL credentials:
+| Script | Command | Purpose |
+| :--- | :--- | :--- |
+| `npm run typecheck` | `tsc --noEmit` | Strict TypeScript compiler check |
+| `npm run lint` | `next lint` | ESLint check using Next core web vitals |
+| `npm test` | `vitest run tests/unit` | Fast unit tests without database connection (29 tests) |
+| `npm run test:db` | `vitest run tests/concurrency` | Integration test on `antigravity_test` (fails loudly if DB not migrated) |
+| `npm run check` | `npm run typecheck && npm run test` | Full pre-commit / CI verification check |
+| `npm run build` | `next build` | Next.js production build |
+| `npm run dev` | `next dev` | Start development server |
+| `npm run db:migrate` | `tsx db/migrate.ts` | Apply migrations 001, 002, 003 (requires `MUTATIONGUARD_ALLOW_DB_WRITE=true`) |
+| `npm run db:seed` | `tsx db/seed.ts` | Seed baseline demo data (requires `MUTATIONGUARD_ALLOW_DB_WRITE=true`) |
+
+---
+
+## 11. Instructions for Stage B (User & ChatGPT)
+
+1. **Configure Local Secrets (`.env.local`)**:
+   Add your PostgreSQL password:
    ```env
    DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@localhost:5432/antigravity_dev
    TEST_DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@localhost:5432/antigravity_test
+   MUTATIONGUARD_ALLOW_DB_WRITE=true
    ```
-2. When ready, execute migrations on development database with write confirmation enabled:
+
+2. **Run Migrations on Both Databases**:
    ```powershell
-   $env:MUTATIONGUARD_ALLOW_DB_WRITE="true"; npm run db:migrate
+   npm run db:migrate
    ```
-   *(or set `MUTATIONGUARD_ALLOW_DB_WRITE=true` in `.env.local`)*
-3. Populate baseline fictional parties and parcels:
+
+3. **Seed Development Database**:
    ```powershell
-   $env:MUTATIONGUARD_ALLOW_DB_WRITE="true"; npm run db:seed
+   npm run db:seed
    ```
-4. Start local development server:
-   ```bash
-   npm run dev
+
+4. **Run Live Database Concurrency Test**:
+   ```powershell
+   $env:NODE_ENV="test"; npm run test:db
    ```
+
+5. **Stage B Implementation Scope**:
+   - Replace the temporary demo cookie stub (`mg_demo_user`) with bcrypt password authentication and signed HTTP-only sessions.
+   - Configure Neon PostgreSQL connection strings for production Vercel deployment.
+   - Rehearse the presentation flow on `/demo`.
 
 ---
 
-## 10. Stated Limitations for Stage A
+## 12. Engineering Credits
 
-1. **Authentication**: Uses the temporary demo cookie stub (`mg_demo_user`) without session encryption. (To be upgraded in Stage B).
-2. **Key Storage**: Ed25519 keypair is generated in-memory for the demo session. (Stage B will load keys from environment/KMS).
-3. **Database Execution**: Migrations and seeds have not been executed yet to preserve database safety until explicit user command.
-
----
-
-## 11. Engineering & Collaboration Credits
-
-- **Claude** — Prompt formulation, requirements specifications, and review.
+- **Claude** — Requirements specifications, phase plan, and architectural reviews.
 - **ChatGPT** — Co-design and Stage B review partner.
-- **Antigravity** — System architecture, Next.js implementation, test suite engineering, and Stage A development.
+- **Antigravity** — System architecture, full-stack implementation, database safety engineering, cryptographic audit rewrite, and Stage A verification.

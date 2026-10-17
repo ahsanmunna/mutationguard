@@ -55,6 +55,7 @@ export default function TransferDetailPage() {
 
   useEffect(() => {
     if (id) fetchTransfer();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   const handleTransition = async (targetStatus: string) => {

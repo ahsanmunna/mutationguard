@@ -7,25 +7,21 @@ import { MutationApplication } from '../../src/lib/rules/types';
 
 describe('Concurrency Protection: Simultaneous Conflicting Submissions', () => {
   let pool: Pool;
-  let isDbReady = false;
 
   beforeAll(async () => {
-    try {
-      pool = getTestPool();
-      // Enforce strict test safety: abort if not a test database
-      await assertTestDatabaseSafety(pool);
+    pool = getTestPool();
+    // Enforce generic test safety: abort if not a test database ending in '_test'
+    await assertTestDatabaseSafety(pool);
 
-      // Verify tables exist
-      const tableCheck = await pool.query(`
-        SELECT to_regclass('public.transfers') as table_exists;
-      `);
-      if (tableCheck.rows[0]?.table_exists) {
-        isDbReady = true;
-      } else {
-        console.warn('[Concurrency Test] Database tables not yet migrated. Skipping live DB test.');
-      }
-    } catch (err: any) {
-      console.warn(`[Concurrency Test Skipped] ${err.message}`);
+    // Verify tables exist: Phase 6 requirement: fails loudly if DB not migrated
+    const tableCheck = await pool.query(`
+      SELECT to_regclass('public.transfers') as table_exists;
+    `);
+    if (!tableCheck.rows[0]?.table_exists) {
+      throw new Error(
+        'DATABASE INTEGRATION TEST FAILURE: Database tables are not migrated! ' +
+        'Apply migrations with "npm run db:migrate" before running database tests.'
+      );
     }
   });
 
@@ -36,11 +32,6 @@ describe('Concurrency Protection: Simultaneous Conflicting Submissions', () => {
   });
 
   it('guarantees that concurrent submissions for P-001 result in 1 active and 1 held transfer', async () => {
-    if (!isDbReady) {
-      console.log('Skipping test execution until database migrations are approved and applied.');
-      return;
-    }
-
     const client1 = await pool.connect();
     const client2 = await pool.connect();
 

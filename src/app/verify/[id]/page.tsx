@@ -84,6 +84,7 @@ export default function PublicVerifyPage() {
         <div className="flex flex-col sm:flex-row items-center justify-around gap-6 p-5 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
           {qr_code_data_url && (
             <div className="text-center space-y-1">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={qr_code_data_url}
                 alt="Verification QR Code"

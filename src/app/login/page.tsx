@@ -1,11 +1,11 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useLanguage } from '@/components/LanguageContext';
 import { localName } from '@/lib/i18n/translations';
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectPath = searchParams.get('redirect') || '/dashboard';
@@ -76,7 +76,6 @@ export default function LoginPage() {
         throw new Error(data.error || 'Failed to login');
       }
 
-      // Refresh window / navigate to redirect path
       window.location.href = redirectPath;
     } catch (err: any) {
       setError(err.message);
@@ -162,5 +161,19 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="py-24 text-center text-sm font-semibold text-slate-500">
+          Loading login options...
+        </div>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   );
 }
