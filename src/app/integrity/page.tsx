@@ -1,7 +1,9 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useLanguage } from '@/components/LanguageContext';
+import { DEMO_COOKIE_NAME, SEEDED_USERS } from '@/lib/auth-types';
 
 export default function IntegrityPage() {
   const { t, language } = useLanguage();
@@ -11,6 +13,20 @@ export default function IntegrityPage() {
   const [loading, setLoading] = useState(false);
   const [tampering, setTampering] = useState(false);
   const [tamperMessage, setTamperMessage] = useState<string | null>(null);
+  const [currentUsername, setCurrentUsername] = useState<string>('officer_farhan');
+
+  useEffect(() => {
+    const match = document.cookie.match(new RegExp(`(?:^|; )${DEMO_COOKIE_NAME}=([^;]*)`));
+    if (match && match[1]) {
+      setCurrentUsername(decodeURIComponent(match[1]));
+    }
+  }, []);
+
+  const currentUser = SEEDED_USERS[currentUsername] || {
+    username: currentUsername,
+    role: 'applicant',
+  };
+  const isReviewer = currentUser.role === 'reviewer';
 
   const runVerification = async () => {
     try {
@@ -33,8 +49,10 @@ export default function IntegrityPage() {
   };
 
   useEffect(() => {
-    runVerification();
-  }, []);
+    if (isReviewer) {
+      runVerification();
+    }
+  }, [isReviewer]);
 
   const handleSimulateTamper = async (seq: number) => {
     try {
@@ -60,6 +78,28 @@ export default function IntegrityPage() {
       setTampering(false);
     }
   };
+
+  if (!isReviewer) {
+    return (
+      <div className="max-w-xl mx-auto py-16 text-center space-y-4">
+        <span className="text-4xl">🔒</span>
+        <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+          {language === 'bn' ? 'অনুমতি নেই (Reviewer Access Only)' : 'Reviewer Role Required'}
+        </h2>
+        <p className="text-xs text-slate-500 max-w-md mx-auto">
+          {language === 'bn'
+            ? 'ক্রিপ্টোগ্রাফিক অডিট লেজার ও চেইন নিরীক্ষা শুধুমাত্র সহকারী কমিশনার (ভূমি) / রিভিউয়ারদের জন্য উন্মুক্ত। অনুগ্রহ করে হেডার থেকে অফিসার ফারহান অ্যাকাউন্টে স্যুইচ করুন।'
+            : 'The cryptographic audit ledger inspection console is restricted to reviewing officers. Please switch to Officer Farhan in the header or login screen.'}
+        </p>
+        <Link
+          href="/login"
+          className="inline-block px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold"
+        >
+          {language === 'bn' ? 'অফিসার হিসেবে লগইন করুন →' : 'Sign in as Officer →'}
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8 max-w-5xl mx-auto">
@@ -197,8 +237,10 @@ export default function IntegrityPage() {
 
                 <div className="pt-1">
                   <span className="text-slate-400 block text-[10px] mb-0.5">PAYLOAD:</span>
-                  <pre className="p-2 rounded bg-slate-100 dark:bg-slate-950 text-slate-800 dark:text-slate-300 font-mono text-[10px] overflow-x-auto">
-                    {JSON.stringify(block.payload, null, 2)}
+                  <pre className="p-2 rounded bg-slate-100 dark:bg-slate-950 text-slate-800 dark:text-slate-300 font-mono text-[10px] overflow-x-auto whitespace-pre-wrap">
+                    {typeof block.payload === 'string'
+                      ? block.payload
+                      : JSON.stringify(block.payload, null, 2)}
                   </pre>
                 </div>
               </div>
