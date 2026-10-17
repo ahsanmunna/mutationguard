@@ -150,28 +150,84 @@ Hackathon Compliance: **All data is dummy/fictional.**
 
 ---
 
-## 9. Actual Test & Build Verification Results
+## 9. Protected Files Policy & Boundary Integrity
 
-### `npm run check` (Typecheck + Unit Tests)
+In compliance with the project architecture guidelines, the following core engine, API, database, and test files were strictly preserved and **never modified**:
+- `src/lib/errors.ts`
+- `src/lib/api-errors.ts`
+- `src/lib/auth.ts`
+- `src/lib/audit/*` (including `ledger.ts`, `log-event.ts`)
+- `src/lib/workflow/*` (including `machine.ts`, `transfer-service.ts`)
+- `src/app/api/**` (all API route handlers)
+- `db/*` (all migrations, seeds, safety guards)
+- `tests/**` (all unit, db, and concurrency test suites)
+
+All improvements for Tasks 1, 2, and 3 were isolated cleanly to client UI components, App Router pages, and the internationalization dictionary (`src/lib/i18n/translations.ts`).
+
+---
+
+## 10. Frontend & Accessibility Tasks (Tasks 1, 2, 3)
+
+### Task 1: Presentation & Demo Control Panel (`/demo`)
+- **Full Bilingual Localization**: Rendered in pure Bangla (default) and pure English via `useLanguage()`.
+- **Concurrent Conflict Simulation**: Added *"Fire two conflicting requests at once"* / *"একই সময়ে দুটি সংঘাতপূর্ণ অনুরোধ পাঠান"*.
+  - Dispatches simultaneous `POST /api/transfers` requests via `Promise.all` for parcel `P-001` (Deed `DEED-2026-001` for Karim vs Deed `DEED-2026-002` for Hasan).
+  - Displays real-time side-by-side comparison cards identifying which transfer gained active (`verified`) state and which transfer was automatically placed on `held` with structured `DOUBLE_SALE` rule findings.
+  - Features evaluation hint banner reminding evaluators to reset demo data first.
+- **Accessible Button States**: Every button across all scenarios and actions implements explicit state management (`idle`, `loading`, `success`, `error`) pairing an icon with descriptive text (never color alone).
+
+### Task 2: Mobile-First 4-Step Mutation Wizard (`/transfers/new`)
+- **4 Distinct Stages**:
+  1. *Step 1: Parcel & Buyer Details* — Interactive parcel selector populated from registry with owner details card, plus buyer name and dummy NID.
+  2. *Step 2: Deed Details* — Prefilled from parcel registry, editable to test mismatch conditions, equipped with a random unique deed generator (`DEED-2026-XXXX`) and `deed_date` input.
+  3. *Step 3: Mutation Application Details* — Auto-synchronized from deed with full user editability.
+  4. *Step 4: Final Summary & Review* — Structured 4-card summary prior to one-click submission.
+- **Touch Accessibility & Responsive Design**: Large touch targets (min 44px height), responsive at 360px mobile width without horizontal overflow, progress indicator with status icons.
+- **Inline Deed Creation**: Sends `deed_date` and inline deed fields directly to `POST /api/transfers`.
+- **Submission Result View**: Displays assigned status, `StatusBadge`, and `ConflictAlert` with option to inspect details or start another application.
+- **Collapsed Presets**: Legacy demo preset buttons moved into an accessible `<details>` accordion section.
+
+### Task 3: Pure Bilingual & Accessibility Pass Across All Screens
+- **Pure Bilingual Text**: Removed all hybrid `"Bangla (English)"` strings across `/dashboard`, `/transfers/[id]`, `/integrity`, `/login`, `/verify/[id]`, `Header`, `Footer`, `HomePage`, `StatusBadge`, and `ConflictAlert`. Bangla displays pure Bengali; English displays pure English.
+- **Non-Color State Indicators**: Paired every status badge, rule alert, workflow button, and system notification with both an icon (`✅`, `🛑`, `⚠️`, `🔍`, `🏛️`, `📝`, `✕`) AND descriptive text.
+- **Bengali Digit Formatting**: Applied `formatNumber()` across parcel areas, block sequence numbers, application counts, and dates.
+- **Mobile Viewport Optimization**: Tested responsive navigation down to 360px viewport width with accessible touch targets (>= 44px) and high-contrast color pairings in light and dark themes.
+
+---
+
+## 11. Actual Test & Build Verification Results
+
+### `npm run check` (`tsc --noEmit && vitest run tests/unit`)
 ```
+> mutationguard@0.1.0 check
+> npm run typecheck && npm run test
+
 > mutationguard@0.1.0 typecheck
 > tsc --noEmit
-(0 errors)
 
 > mutationguard@0.1.0 test
 > vitest run tests/unit
 
- ✓ tests/unit/rules.test.ts (4 tests)
- ✓ tests/unit/workflow.test.ts (2 tests)
- ✓ tests/unit/crypto.test.ts (4 tests)
- ✓ tests/unit/database-safety.test.ts (19 tests)
+ RUN  v3.2.7 D:/landtech
 
- Test Files  4 passed (4)
-      Tests  29 passed (29)
-   Duration  2.39s
+ ✓ tests/unit/errors.test.ts (5 tests) 10ms
+ ✓ tests/unit/rules.test.ts (4 tests) 15ms
+ ✓ tests/unit/workflow.test.ts (2 tests) 6ms
+ ✓ tests/unit/crypto.test.ts (4 tests) 21ms
+stderr | tests/unit/database-safety.test.ts > Database Safety Guard Unit Tests (Mocked - No Database Connection) > 6. Seed Script Destructive Action Refusal > refuses to delete or reset data when MUTATIONGUARD_ALLOW_DB_WRITE is missing
+[Seed Error] SAFETY VIOLATION: Database write operation refused. Explicit confirmation required: set MUTATIONGUARD_ALLOW_DB_WRITE=true to proceed.
+
+stderr | tests/unit/database-safety.test.ts > Database Safety Guard Unit Tests (Mocked - No Database Connection) > 6. Seed Script Destructive Action Refusal > refuses to delete or reset data when connected database is not allowed
+[Seed Error] FATAL SAFETY VIOLATION: Connected to database "production_server", but expected "antigravity_test" for test operations. Operation rejected before any writes.
+
+ ✓ tests/unit/database-safety.test.ts (19 tests) 47ms
+
+ Test Files  5 passed (5)
+      Tests  34 passed (34)
+   Duration  2.66s
 ```
 
-### `npm run lint` (ESLint)
+### `npm run lint` (`next lint`)
 ```
 > mutationguard@0.1.0 lint
 > next lint
@@ -179,48 +235,77 @@ Hackathon Compliance: **All data is dummy/fictional.**
 ✔ No ESLint warnings or errors
 ```
 
-### `npm run build` (Next.js Production Build)
+### `npm run build` (`next build`)
 ```
 > mutationguard@0.1.0 build
 > next build
 
- ✓ Compiled successfully
- ✓ Linting and checking validity of types
+   ▲ Next.js 15.5.28
+   - Environments: .env.local
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully in 32.4s
+   Linting and checking validity of types ...
+   Collecting page data ...
+   Generating static pages (0/18) ...
+   Generating static pages (4/18) 
+   Generating static pages (8/18) 
+   Generating static pages (13/18) 
  ✓ Generating static pages (18/18)
- ✓ Finalizing page optimization
+   Finalizing page optimization ...
+   Collecting build traces ...
 
-18 routes compiled (Static and Dynamic) + Middleware (34.2 kB)
-```
+Route (app)                                 Size  First Load JS
+┌ ○ /                                    5.59 kB         112 kB
+├ ○ /_not-found                            993 B         104 kB
+├ ƒ /api/audit/records                     150 B         103 kB
+├ ƒ /api/audit/tamper                      150 B         103 kB
+├ ƒ /api/audit/verify                      150 B         103 kB
+├ ƒ /api/auth/demo-login                   150 B         103 kB
+├ ƒ /api/auth/logout                       150 B         103 kB
+├ ƒ /api/deeds                             150 B         103 kB
+├ ƒ /api/demo/reset                        150 B         103 kB
+├ ƒ /api/parcels                           150 B         103 kB
+├ ƒ /api/public/verify/[id]                150 B         103 kB
+├ ƒ /api/transfers                         150 B         103 kB
+├ ƒ /api/transfers/[id]                    150 B         103 kB
+├ ○ /dashboard                           6.73 kB         113 kB
+├ ○ /demo                                7.14 kB         115 kB
+├ ○ /integrity                            6.6 kB         113 kB
+├ ○ /login                               5.66 kB         108 kB
+├ ƒ /transfers/[id]                      4.38 kB         115 kB
+├ ○ /transfers/new                       6.43 kB         114 kB
+└ ƒ /verify/[id]                         5.96 kB         109 kB
++ First Load JS shared by all             103 kB
+  ├ chunks/255-b1e2483a7e02feee.js       46.6 kB
+  ├ chunks/4bd1b696-c023c6e3521b1417.js  54.2 kB
+  └ other shared chunks (total)          1.99 kB
 
-### `npm run test:db` (Concurrency / Real Database Tests)
-```
-> mutationguard@0.1.0 test:db
-> vitest run tests/concurrency
+ƒ Middleware                             34.2 kB
 
-FAIL tests/concurrency/double-sale.test.ts
-Error: DATABASE INTEGRATION TEST FAILURE: Database tables are not migrated! Apply migrations with "npm run db:migrate" before running database tests.
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
 ```
-*(Fails loudly as required by Stage A specification when migrations have not yet been run by the user).*
 
 ---
 
-## 10. Available NPM Scripts
+## 12. Available NPM Scripts
 
 | Script | Command | Purpose |
 | :--- | :--- | :--- |
 | `npm run typecheck` | `tsc --noEmit` | Strict TypeScript compiler check |
 | `npm run lint` | `next lint` | ESLint check using Next core web vitals |
-| `npm test` | `vitest run tests/unit` | Fast unit tests without database connection (29 tests) |
-| `npm run test:db` | `vitest run tests/concurrency` | Integration test on `antigravity_test` (fails loudly if DB not migrated) |
+| `npm test` | `vitest run tests/unit` | Fast unit tests without database connection (34 tests) |
+| `npm run test:db` | `vitest run tests/concurrency tests/db --no-file-parallelism` | Integration tests on `antigravity_test` (fails closed if DB not migrated) |
 | `npm run check` | `npm run typecheck && npm run test` | Full pre-commit / CI verification check |
 | `npm run build` | `next build` | Next.js production build |
 | `npm run dev` | `next dev` | Start development server |
-| `npm run db:migrate` | `tsx db/migrate.ts` | Apply migrations 001, 002, 003 (requires `MUTATIONGUARD_ALLOW_DB_WRITE=true`) |
+| `npm run db:migrate` | `tsx db/migrate.ts` | Apply migrations (requires `MUTATIONGUARD_ALLOW_DB_WRITE=true`) |
 | `npm run db:seed` | `tsx db/seed.ts` | Seed baseline demo data (requires `MUTATIONGUARD_ALLOW_DB_WRITE=true`) |
 
 ---
 
-## 11. Instructions for Stage B (User & ChatGPT)
+## 13. Instructions for Stage B (User & ChatGPT)
 
 1. **Configure Local Secrets (`.env.local`)**:
    Add your PostgreSQL password:
@@ -240,7 +325,7 @@ Error: DATABASE INTEGRATION TEST FAILURE: Database tables are not migrated! Appl
    npm run db:seed
    ```
 
-4. **Run Live Database Concurrency Test**:
+4. **Run Live Database Concurrency & DB Test**:
    ```powershell
    $env:NODE_ENV="test"; npm run test:db
    ```
@@ -252,8 +337,8 @@ Error: DATABASE INTEGRATION TEST FAILURE: Database tables are not migrated! Appl
 
 ---
 
-## 12. Engineering Credits
+## 14. Engineering Credits
 
 - **Claude** — Requirements specifications, phase plan, and architectural reviews.
 - **ChatGPT** — Co-design and Stage B review partner.
-- **Antigravity** — System architecture, full-stack implementation, database safety engineering, cryptographic audit rewrite, and Stage A verification.
+- **Antigravity** — System architecture, full-stack implementation, database safety engineering, cryptographic audit rewrite, mobile-first UI wizard, bilingual localization, and Stage A verification.
