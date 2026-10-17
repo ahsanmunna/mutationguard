@@ -3,13 +3,16 @@ import {
   canonicalJsonStringify,
   sha256,
   calculateDeedAnchorHash,
-  calculateAuditRecordHash,
 } from '../../src/lib/crypto/hasher';
 import {
   generateEd25519KeyPair,
   signData,
   verifySignature,
 } from '../../src/lib/crypto/signature';
+import {
+  calculateAuditRecordHash,
+  verifyDeedAnchor,
+} from '../../src/lib/audit/ledger';
 
 describe('Cryptographic Libraries (SHA-256 and Ed25519)', () => {
   it('should produce identical canonical JSON regardless of key insertion order', () => {
@@ -41,6 +44,18 @@ describe('Cryptographic Libraries (SHA-256 and Ed25519)', () => {
     expect(hash).toHaveLength(64);
     // Hash must be deterministic
     expect(calculateDeedAnchorHash(deed)).toBe(hash);
+
+    // verifyDeedAnchor must succeed with the matching hash
+    const isValid = verifyDeedAnchor({ ...deed, deed_hash: hash });
+    expect(isValid).toBe(true);
+
+    // verifyDeedAnchor must fail if deed fields are altered
+    const isTamperedValid = verifyDeedAnchor({
+      ...deed,
+      area_decimal: 6.0,
+      deed_hash: hash,
+    });
+    expect(isTamperedValid).toBe(false);
   });
 
   it('should generate valid Ed25519 keypair and sign/verify data', () => {
@@ -61,5 +76,31 @@ describe('Cryptographic Libraries (SHA-256 and Ed25519)', () => {
     // Tampered payload must fail
     const isTamperedValid = verifySignature('tampered-payload', signature, publicKey);
     expect(isTamperedValid).toBe(false);
+  });
+
+  it('should calculate deterministic pipe-delimited audit record hash (Phase 2 spec)', () => {
+    const params = {
+      sequence_num: 1,
+      actor_username: 'officer_farhan',
+      actor_role: 'reviewer',
+      event_type: 'TRANSFER_APPROVED',
+      entity_type: 'transfer',
+      entity_id: 'TR-2026-0001',
+      payload_hash: 'a'.repeat(64),
+      previous_hash: '0'.repeat(64),
+      timestamp: '2026-10-17T06:00:00.000Z',
+    };
+
+    const hash1 = calculateAuditRecordHash(params);
+    const hash2 = calculateAuditRecordHash(params);
+    expect(hash1).toHaveLength(64);
+    expect(hash1).toBe(hash2);
+
+    // Tampering any field must change the hash
+    const tamperedHash = calculateAuditRecordHash({
+      ...params,
+      event_type: 'TRANSFER_REJECTED',
+    });
+    expect(tamperedHash).not.toBe(hash1);
   });
 });

@@ -1,3 +1,13 @@
+/**
+ * POST /api/audit/tamper
+ *
+ * DEMO-ONLY endpoint: deliberately corrupts an audit_ledger row so students
+ * can demonstrate the integrity checker detecting it.
+ *
+ * Requires DEMO_MODE=true and reviewer role.
+ *
+ * Phase 2 update: payload is now TEXT (not JSONB), so tampering appends text.
+ */
 import { NextRequest, NextResponse } from 'next/server';
 import { withTransaction } from '@/../db';
 import { requireRole } from '@/lib/auth';
@@ -9,21 +19,19 @@ export async function POST(req: NextRequest) {
 
   try {
     await requireRole(['reviewer'], req);
-    const body = await req.json();
+    const body        = await req.json();
     const sequenceNum = Number(body.sequence_num);
 
     if (!sequenceNum) {
       return NextResponse.json({ error: 'Sequence number is required' }, { status: 400 });
     }
 
-    // Deliberately modify the payload inside a transaction on a safety-verified connection
+    // payload is now TEXT — append a fake field to corrupt the canonical JSON
     await withTransaction(async (client) => {
       await client.query(
-        `
-        UPDATE audit_ledger 
-        SET payload = jsonb_set(payload, '{tampered_by_attacker}', '"Maliciously modified record"')
-        WHERE sequence_num = $1;
-      `,
+        `UPDATE audit_ledger
+         SET payload = REPLACE(payload, '}', ',"tampered_by_attacker":"Maliciously modified record"}')
+         WHERE sequence_num = $1;`,
         [sequenceNum]
       );
     });

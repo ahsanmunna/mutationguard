@@ -42,12 +42,7 @@ export function verifySignature(
   }
 }
 
-// Deterministic in-memory keypair for system audit actor during local dev / demo
-let systemKeyPair: KeyPair | null = null;
-
-export function getSystemAuditKeyPair(): KeyPair {
-  if (!systemKeyPair) {
-    systemKeyPair = generateEd25519KeyPair();
-  }
-  return systemKeyPair;
-}
+// NOTE: getSystemAuditKeyPair() was removed in Phase 2.
+// All audit events are signed with the actor's per-user Ed25519 key,
+// fetched from the users table at the time of signing.
+// See src/lib/audit/ledger.ts → appendAuditEvent().
