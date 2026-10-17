@@ -1,17 +1,22 @@
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+import { Noto_Sans_Bengali } from 'next/font/google';
 import './globals.css';
 import { LanguageProvider } from '@/components/LanguageContext';
 import { ThemeProvider } from '@/components/ThemeContext';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 
-const inter = Inter({ subsets: ['latin'] });
+// Bangla-first primary font for Hackathon presentation
+const notoSansBengali = Noto_Sans_Bengali({
+  subsets: ['bengali'],
+  weight: ['400', '500', '600', '700', '800'],
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
-  title: 'MutationGuard - Land Mutation Conflict Prevention System',
+  title: 'MutationGuard | ভূমি নামজারি ও দ্বৈত হস্তান্তর সনাক্তকরণ',
   description:
-    'Full-stack land transfer conflict detection, ownership verification, and tamper-evident audit ledger',
+    'Full-stack land transfer conflict detection, ownership verification, and tamper-evident audit ledger (DIU LandTech Innovation Hackathon 2026)',
 };
 
 export default function RootLayout({
@@ -21,7 +26,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="bn" suppressHydrationWarning>
-      <body className={`${inter.className} min-h-screen flex flex-col antialiased`}>
+      <body className={`${notoSansBengali.className} min-h-screen flex flex-col antialiased`}>
         <ThemeProvider>
           <LanguageProvider>
             <Header />
