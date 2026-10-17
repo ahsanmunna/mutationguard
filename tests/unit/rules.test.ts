@@ -20,7 +20,7 @@ describe('MutationGuard Detection Rules', () => {
     dag: 'D-1001',
     area_decimal: 5.0,
     current_owner_name: 'Rahim Uddin',
-    current_owner_nid: '1985000000001',
+    current_owner_nid: 'NID-DEMO-0001',
     status: 'active',
   };
 
@@ -28,9 +28,9 @@ describe('MutationGuard Detection Rules', () => {
     deed_number: 'DEED-2026-001',
     parcel_id: 'P-001',
     seller_name: 'Rahim Uddin',
-    seller_nid: '1985000000001',
+    seller_nid: 'NID-DEMO-0001',
     buyer_name: 'Karim Chowdhury',
-    buyer_nid: '1988000000002',
+    buyer_nid: 'NID-DEMO-0002',
     mouza: 'Dhanmondi-102',
     khatian: 'K-501',
     dag: 'D-1001',
@@ -43,9 +43,9 @@ describe('MutationGuard Detection Rules', () => {
     deed_number: 'DEED-2026-001',
     applicant_username: 'karim_chowdhury',
     seller_name: 'Rahim Uddin',
-    seller_nid: '1985000000001',
+    seller_nid: 'NID-DEMO-0001',
     buyer_name: 'Karim Chowdhury',
-    buyer_nid: '1988000000002',
+    buyer_nid: 'NID-DEMO-0002',
     application_mouza: 'Dhanmondi-102',
     application_khatian: 'K-501',
     application_dag: 'D-1001',
@@ -65,7 +65,8 @@ describe('MutationGuard Detection Rules', () => {
     expect(finding).not.toBeNull();
     expect(finding?.rule_id).toBe('DOUBLE_SALE');
     expect(finding?.action).toBe('hold');
-    expect(finding?.evidence).toContain('TR-ACTIVE-01');
+    expect(typeof finding?.evidence).toBe('object');
+    expect(finding?.evidence.conflict_id).toBe('TR-ACTIVE-01');
 
     // Clean check
     const cleanFinding = checkDoubleSale(cleanApplication, null);
@@ -76,13 +77,14 @@ describe('MutationGuard Detection Rules', () => {
     const wrongSellerApp: MutationApplication = {
       ...cleanApplication,
       seller_name: 'Hasan Mahmud',
-      seller_nid: '1992000000003',
+      seller_nid: 'NID-DEMO-0003',
     };
 
     const finding = checkWrongSeller(wrongSellerApp, sampleParcel);
     expect(finding).not.toBeNull();
     expect(finding?.rule_id).toBe('WRONG_SELLER');
     expect(finding?.action).toBe('hold');
+    expect(typeof finding?.evidence).toBe('object');
     expect(finding?.expected.owner_name).toBe('Rahim Uddin');
     expect(finding?.observed.seller_name).toBe('Hasan Mahmud');
 
@@ -112,6 +114,7 @@ describe('MutationGuard Detection Rules', () => {
     expect(finding).not.toBeNull();
     expect(finding?.rule_id).toBe('RECORD_MISMATCH');
     expect(finding?.action).toBe('hold');
+    expect(typeof finding?.evidence).toBe('object');
 
     const expectedKeys = Object.keys(finding?.expected || {});
     expect(expectedKeys).toContain('deed_vs_registry_dag');

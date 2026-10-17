@@ -12,7 +12,7 @@ describe('Concurrency Protection: Simultaneous Conflicting Submissions', () => {
   beforeAll(async () => {
     try {
       pool = getTestPool();
-      // Enforce strict test safety: abort if not antigravity_test
+      // Enforce strict test safety: abort if not a test database
       await assertTestDatabaseSafety(pool);
 
       // Verify tables exist
@@ -48,14 +48,22 @@ describe('Concurrency Protection: Simultaneous Conflicting Submissions', () => {
       const applicantKarim = SEEDED_USERS['karim_chowdhury'];
       const applicantHasan = SEEDED_USERS['hasan_mahmud'];
 
+      const karimKey = (
+        await pool.query('SELECT private_key FROM users WHERE username = $1', ['karim_chowdhury'])
+      ).rows[0]?.private_key || '';
+
+      const hasanKey = (
+        await pool.query('SELECT private_key FROM users WHERE username = $1', ['hasan_mahmud'])
+      ).rows[0]?.private_key || '';
+
       const app1: MutationApplication = {
         parcel_id: 'P-001',
         deed_number: 'DEED-2026-001',
         applicant_username: applicantKarim.username,
         seller_name: 'Rahim Uddin',
-        seller_nid: '1985000000001',
+        seller_nid: 'NID-DEMO-0001',
         buyer_name: 'Karim Chowdhury',
-        buyer_nid: '1988000000002',
+        buyer_nid: 'NID-DEMO-0002',
         application_mouza: 'Dhanmondi-102',
         application_khatian: 'K-501',
         application_dag: 'D-1001',
@@ -67,9 +75,9 @@ describe('Concurrency Protection: Simultaneous Conflicting Submissions', () => {
         deed_number: 'DEED-2026-002',
         applicant_username: applicantHasan.username,
         seller_name: 'Rahim Uddin',
-        seller_nid: '1985000000001',
+        seller_nid: 'NID-DEMO-0001',
         buyer_name: 'Hasan Mahmud',
-        buyer_nid: '1992000000003',
+        buyer_nid: 'NID-DEMO-0003',
         application_mouza: 'Dhanmondi-102',
         application_khatian: 'K-501',
         application_dag: 'D-1001',
@@ -80,13 +88,13 @@ describe('Concurrency Protection: Simultaneous Conflicting Submissions', () => {
       const [res1, res2] = await Promise.all([
         (async () => {
           await client1.query('BEGIN');
-          const res = await createTransfer(client1, app1, applicantKarim);
+          const res = await createTransfer(client1, app1, applicantKarim, karimKey);
           await client1.query('COMMIT');
           return res;
         })(),
         (async () => {
           await client2.query('BEGIN');
-          const res = await createTransfer(client2, app2, applicantHasan);
+          const res = await createTransfer(client2, app2, applicantHasan, hasanKey);
           await client2.query('COMMIT');
           return res;
         })(),

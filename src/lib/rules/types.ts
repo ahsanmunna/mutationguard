@@ -2,11 +2,11 @@ export type RuleId = 'DOUBLE_SALE' | 'WRONG_SELLER' | 'RECORD_MISMATCH';
 export type FindingAction = 'hold' | 'flag' | 'block';
 
 export interface Finding {
-  rule_id: RuleId;
+  rule_id:  RuleId;
   expected: any;
   observed: any;
-  evidence: string;
-  action: FindingAction;
+  evidence: Record<string, any>;  // structured object, not a plain English sentence
+  action:   FindingAction;
 }
 
 export interface ParcelRecord {
