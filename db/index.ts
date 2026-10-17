@@ -1,7 +1,7 @@
 import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
 import dotenv from 'dotenv';
 import path from 'path';
-import { sanitizeErrorMessage } from './safety';
+import { verifyDatabaseSafety, sanitizeErrorMessage, SafetyCheckOptions } from './safety';
 
 // Ensure environment variables are loaded
 dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
@@ -56,42 +56,71 @@ export function getPool(): Pool {
 }
 
 /**
+ * Injects or resets the active pool instance (for mock testing and resource management).
+ */
+export function setPool(customPool: Pool | null): void {
+  pool = customPool;
+}
+
+/**
  * Cleanly closes the active pool and resets reference.
  */
 export async function closePool(): Promise<void> {
   if (pool) {
     const p = pool;
     pool = null;
-    await p.end().catch(() => {});
+    if (typeof p.end === 'function') {
+      await Promise.resolve(p.end()).catch(() => {});
+    }
   }
 }
 
 /**
- * Execute parameterized query safely using the connection pool
+ * Checks out a client from the pool and immediately verifies that its actual
+ * connected database (SELECT current_database()) matches the allowed database name
+ * ('antigravity_dev' in development, 'antigravity_test' in test).
+ *
+ * If verification fails, the client is immediately released and an error is thrown.
+ * Verification and subsequent writes are guaranteed to run on the EXACT SAME checked-out client.
+ */
+export async function getClient(options?: SafetyCheckOptions): Promise<PoolClient> {
+  const currentPool = getPool();
+  const client = await currentPool.connect();
+
+  try {
+    // Verifies connected database on this exact checked-out connection
+    await verifyDatabaseSafety(client, options);
+    return client;
+  } catch (err) {
+    client.release();
+    throw err;
+  }
+}
+
+/**
+ * Execute parameterized query safely on a verified client from the connection pool.
  */
 export async function query<T extends QueryResultRow = any>(
   text: string,
   params?: any[]
 ): Promise<QueryResult<T>> {
-  const currentPool = getPool();
-  return currentPool.query<T>(text, params);
+  const client = await getClient();
+  try {
+    return await client.query<T>(text, params);
+  } finally {
+    client.release();
+  }
 }
 
 /**
- * Get dedicated client for transactions
- */
-export async function getClient(): Promise<PoolClient> {
-  const currentPool = getPool();
-  return currentPool.connect();
-}
-
-/**
- * Helper to execute a callback within a managed transaction
+ * Helper to execute a callback within a managed transaction on a safety-verified connection.
+ * Verification, BEGIN, callback writes, and COMMIT run on the exact same client.
  */
 export async function withTransaction<T>(
-  callback: (client: PoolClient) => Promise<T>
+  callback: (client: PoolClient) => Promise<T>,
+  options?: SafetyCheckOptions
 ): Promise<T> {
-  const client = await getClient();
+  const client = await getClient(options);
   try {
     await client.query('BEGIN');
     const result = await callback(client);

@@ -6,7 +6,7 @@ import {
   WRITE_CONFIRMATION_ENV_VAR,
   ALLOWED_DATABASES,
 } from '../../db/safety';
-import { getDatabaseUrl } from '../../db/index';
+import { getDatabaseUrl, setPool, closePool, withTransaction, query, getClient } from '../../db/index';
 import { runSeed } from '../../db/seed';
 
 describe('Database Safety Guard Unit Tests (Mocked - No Database Connection)', () => {
@@ -14,10 +14,12 @@ describe('Database Safety Guard Unit Tests (Mocked - No Database Connection)', (
 
   beforeEach(() => {
     process.env = { ...originalEnv };
+    setPool(null);
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     process.env = { ...originalEnv };
+    await closePool();
     vi.restoreAllMocks();
   });
 
@@ -54,7 +56,7 @@ describe('Database Safety Guard Unit Tests (Mocked - No Database Connection)', (
     });
   });
 
-  describe('2. Absent Write Confirmation Requirement', () => {
+  describe('2. Absent Write Confirmation Requirement for CLI Migrations/Seeds', () => {
     it('refuses write operations when MUTATIONGUARD_ALLOW_DB_WRITE is missing', () => {
       delete process.env[WRITE_CONFIRMATION_ENV_VAR];
 
@@ -179,7 +181,181 @@ describe('Database Safety Guard Unit Tests (Mocked - No Database Connection)', (
     });
   });
 
-  describe('5. Seed Script Destructive Action Refusal', () => {
+  describe('5. Runtime Write Safety Guards (withTransaction & query)', () => {
+    it('withTransaction verifies database name on the exact checked-out connection and executes write', async () => {
+      (process.env as any).NODE_ENV = 'development';
+      const executedQueries: string[] = [];
+
+      const mockClient = {
+        query: vi.fn().mockImplementation((sql: string) => {
+          executedQueries.push(sql);
+          if (sql.includes('current_database')) {
+            return Promise.resolve({ rows: [{ db_name: 'antigravity_dev' }] });
+          }
+          return Promise.resolve({ rows: [] });
+        }),
+        release: vi.fn(),
+      };
+
+      const mockPool = {
+        connect: vi.fn().mockResolvedValue(mockClient),
+        end: vi.fn(),
+      };
+      setPool(mockPool as any);
+
+      // Perform runtime transaction write
+      const result = await withTransaction(async (client) => {
+        await client.query('INSERT INTO transfers (id) VALUES ($1);', ['TR-001']);
+        return 'success';
+      });
+
+      expect(result).toBe('success');
+
+      // Verify execution order on the EXACT SAME client connection:
+      // 1. SELECT current_database()
+      // 2. BEGIN
+      // 3. INSERT INTO transfers ...
+      // 4. COMMIT
+      expect(executedQueries[0]).toBe('SELECT current_database() as db_name;');
+      expect(executedQueries[1]).toBe('BEGIN');
+      expect(executedQueries[2]).toBe('INSERT INTO transfers (id) VALUES ($1);');
+      expect(executedQueries[3]).toBe('COMMIT');
+
+      // Verify client was cleanly released
+      expect(mockClient.release).toHaveBeenCalledTimes(1);
+    });
+
+    it('withTransaction strictly rejects and aborts before BEGIN when connected to wrong database (e.g. production)', async () => {
+      (process.env as any).NODE_ENV = 'development';
+      const executedQueries: string[] = [];
+
+      const mockClient = {
+        query: vi.fn().mockImplementation((sql: string) => {
+          executedQueries.push(sql);
+          if (sql.includes('current_database')) {
+            return Promise.resolve({ rows: [{ db_name: 'production_main_db' }] });
+          }
+          return Promise.resolve({ rows: [] });
+        }),
+        release: vi.fn(),
+      };
+
+      const mockPool = {
+        connect: vi.fn().mockResolvedValue(mockClient),
+        end: vi.fn(),
+      };
+      setPool(mockPool as any);
+
+      const writeCallback = vi.fn();
+
+      await expect(
+        withTransaction(async (client) => {
+          writeCallback();
+          await client.query('INSERT INTO transfers (id) VALUES ($1);', ['TR-001']);
+        })
+      ).rejects.toThrowError(
+        /FATAL SAFETY VIOLATION: Connected to database "production_main_db", but expected "antigravity_dev"/
+      );
+
+      // Verify that callback and writes were NEVER called
+      expect(writeCallback).not.toHaveBeenCalled();
+      expect(executedQueries.some((sql) => /BEGIN|INSERT|COMMIT/i.test(sql))).toBe(false);
+
+      // Verify client was cleanly released
+      expect(mockClient.release).toHaveBeenCalledTimes(1);
+    });
+
+    it('withTransaction enforces antigravity_test when NODE_ENV=test', async () => {
+      (process.env as any).NODE_ENV = 'test';
+
+      const mockClient = {
+        query: vi.fn().mockImplementation((sql: string) => {
+          if (sql.includes('current_database')) {
+            // Unexpected dev DB in test mode
+            return Promise.resolve({ rows: [{ db_name: 'antigravity_dev' }] });
+          }
+          return Promise.resolve({ rows: [] });
+        }),
+        release: vi.fn(),
+      };
+
+      const mockPool = {
+        connect: vi.fn().mockResolvedValue(mockClient),
+        end: vi.fn(),
+      };
+      setPool(mockPool as any);
+
+      await expect(
+        withTransaction(async (client) => {
+          await client.query('INSERT INTO transfers (id) VALUES ($1);');
+        })
+      ).rejects.toThrowError(
+        /FATAL SAFETY VIOLATION: Connected to database "antigravity_dev", but expected "antigravity_test"/
+      );
+
+      expect(mockClient.release).toHaveBeenCalled();
+    });
+
+    it('query helper verifies connection before executing query and releases client', async () => {
+      (process.env as any).NODE_ENV = 'development';
+
+      const mockClient = {
+        query: vi.fn().mockImplementation((sql: string) => {
+          if (sql.includes('current_database')) {
+            return Promise.resolve({ rows: [{ db_name: 'antigravity_dev' }] });
+          }
+          return Promise.resolve({ rows: [{ count: 42 }] });
+        }),
+        release: vi.fn(),
+      };
+
+      const mockPool = {
+        connect: vi.fn().mockResolvedValue(mockClient),
+        end: vi.fn(),
+      };
+      setPool(mockPool as any);
+
+      const res = await query('SELECT count(*) FROM parcels;');
+      expect(res.rows[0].count).toBe(42);
+      expect(mockClient.release).toHaveBeenCalled();
+    });
+
+    it('ordinary runtime requests do NOT require MUTATIONGUARD_ALLOW_DB_WRITE=true', async () => {
+      (process.env as any).NODE_ENV = 'development';
+      delete process.env[WRITE_CONFIRMATION_ENV_VAR]; // Not set
+
+      const mockClient = {
+        query: vi.fn().mockImplementation((sql: string) => {
+          if (sql.includes('current_database')) {
+            return Promise.resolve({ rows: [{ db_name: 'antigravity_dev' }] });
+          }
+          return Promise.resolve({ rows: [] });
+        }),
+        release: vi.fn(),
+      };
+
+      const mockPool = {
+        connect: vi.fn().mockResolvedValue(mockClient),
+        end: vi.fn(),
+      };
+      setPool(mockPool as any);
+
+      // withTransaction without options must succeed without confirmation env var
+      await expect(
+        withTransaction(async (client) => {
+          await client.query('SELECT 1;');
+          return 'ok';
+        })
+      ).resolves.toBe('ok');
+
+      // However, if requireWriteConfirmation is passed (like in CLI commands), it must fail
+      await expect(
+        withTransaction(async () => {}, { requireWriteConfirmation: true })
+      ).rejects.toThrowError(/SAFETY VIOLATION: Database write operation refused/);
+    });
+  });
+
+  describe('6. Seed Script Destructive Action Refusal', () => {
     it('refuses to delete or reset data when MUTATIONGUARD_ALLOW_DB_WRITE is missing', async () => {
       delete process.env[WRITE_CONFIRMATION_ENV_VAR];
       const mockClient = {
@@ -231,7 +407,7 @@ describe('Database Safety Guard Unit Tests (Mocked - No Database Connection)', (
     });
   });
 
-  describe('6. Credentials and Secret Redaction in Error Messages', () => {
+  describe('7. Credentials and Secret Redaction in Error Messages', () => {
     it('redacts credentials and connection URLs from error strings', () => {
       const sensitive =
         'Error: connect to postgresql://postgres:super_secret_pw@db.example.com:5432/antigravity_dev failed';

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPool } from '@/../db';
+import { withTransaction } from '@/../db';
 import { requireRole } from '@/lib/auth';
 
 export async function POST(req: NextRequest) {
@@ -16,16 +16,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Sequence number is required' }, { status: 400 });
     }
 
-    const pool = getPool();
-    // Deliberately modify the payload without updating the hash to simulate an unauthorized database edit
-    await pool.query(
-      `
-      UPDATE audit_ledger 
-      SET payload = jsonb_set(payload, '{tampered_by_attacker}', '"Maliciously modified record"')
-      WHERE sequence_num = $1;
-    `,
-      [sequenceNum]
-    );
+    // Deliberately modify the payload inside a transaction on a safety-verified connection
+    await withTransaction(async (client) => {
+      await client.query(
+        `
+        UPDATE audit_ledger 
+        SET payload = jsonb_set(payload, '{tampered_by_attacker}', '"Maliciously modified record"')
+        WHERE sequence_num = $1;
+      `,
+        [sequenceNum]
+      );
+    });
 
     return NextResponse.json({
       success: true,
