@@ -123,7 +123,6 @@ export default function DemoPage() {
       application_khatian: 'K-501',
       application_dag: 'D-1001',
       application_area_decimal: '5.00',
-      deed_date: '2026-01-15',
     };
 
     const hasanBody = {
@@ -137,7 +136,6 @@ export default function DemoPage() {
       application_khatian: 'K-501',
       application_dag: 'D-1001',
       application_area_decimal: '5.00',
-      deed_date: '2026-01-16',
     };
 
     try {
@@ -220,7 +218,6 @@ export default function DemoPage() {
           application_khatian: 'K-501',
           application_dag: 'D-1001',
           application_area_decimal: '5.00',
-          deed_date: '2026-01-15',
         }),
       });
       const data = await res.json();
@@ -273,7 +270,6 @@ export default function DemoPage() {
           application_khatian: 'K-501',
           application_dag: 'D-1001',
           application_area_decimal: '5.00',
-          deed_date: '2026-01-16',
         }),
       });
       const data = await res.json();
@@ -396,7 +392,6 @@ export default function DemoPage() {
           application_khatian: 'K-501',
           application_dag: 'D-1001',
           application_area_decimal: '5.00',
-          deed_date: '2026-01-20',
         }),
       });
       const data = await res.json();
@@ -448,7 +443,6 @@ export default function DemoPage() {
           application_khatian: 'K-602',
           application_dag: 'D-2099', // Discrepancy
           application_area_decimal: '8.00', // Discrepancy
-          deed_date: '2026-01-18',
         }),
       });
       const data = await res.json();
