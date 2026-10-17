@@ -1,13 +1,11 @@
 /**
- * GET /api/audit/records — returns all audit ledger records for the integrity page.
- *
- * Phase 2 update: public_key column was removed from audit_ledger (migration 003).
- * timestamp is now stored as TEXT — no to_char() conversion needed.
- * Requires reviewer role (only AC Land officers should see the full ledger).
+ * GET /api/audit/records - all audit ledger records for the integrity page.
+ * Reviewer only (403 + audit event for anyone else).
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/../db';
 import { requireRole } from '@/lib/auth';
+import { handleApiError } from '@/lib/api-errors';
 
 export async function GET(req: NextRequest) {
   try {
@@ -23,7 +21,7 @@ export async function GET(req: NextRequest) {
     `);
 
     return NextResponse.json({ records: result.rows });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err) {
+    return handleApiError(err, 'GET /api/audit/records');
   }
 }

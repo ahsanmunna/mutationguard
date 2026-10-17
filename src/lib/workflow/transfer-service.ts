@@ -21,6 +21,7 @@ import {
 import { evaluateAllRules } from '../rules/engine';
 import { appendAuditEvent } from '../audit/ledger';
 import { UserSession } from '../auth';
+import { ConflictError, NotFoundError } from '../errors';
 import { calculateDeedAnchorHash } from '../crypto/hasher';
 import { canonicalJsonStringify } from '../crypto/hasher';
 
@@ -106,20 +107,30 @@ export async function createTransfer(
       seller_name:  inlineDeed.seller_name,
     });
 
-    await client.query(
-      `INSERT INTO deeds (deed_number, parcel_id, seller_name, seller_nid, buyer_name, buyer_nid,
-                          mouza, khatian, dag, area_decimal, deed_date, deed_hash, deed_json)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-       ON CONFLICT (deed_number) DO NOTHING;`,
-      [
-        inlineDeed.deed_number, inlineDeed.parcel_id,
-        inlineDeed.seller_name, inlineDeed.seller_nid,
-        inlineDeed.buyer_name,  inlineDeed.buyer_nid,
-        inlineDeed.mouza, inlineDeed.khatian, inlineDeed.dag,
-        inlineDeed.area_decimal, inlineDeed.deed_date,
-        deedHash, deedJson,
-      ]
-    );
+    // Plain INSERT (no ON CONFLICT): a duplicate deed number must be REJECTED. Before, it was
+    // silently ignored and the rules then ran against the OLD deed, not the submitted data.
+    try {
+      await client.query(
+        `INSERT INTO deeds (deed_number, parcel_id, seller_name, seller_nid, buyer_name, buyer_nid,
+                            mouza, khatian, dag, area_decimal, deed_date, deed_hash, deed_json)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13);`,
+        [
+          inlineDeed.deed_number, inlineDeed.parcel_id,
+          inlineDeed.seller_name, inlineDeed.seller_nid,
+          inlineDeed.buyer_name,  inlineDeed.buyer_nid,
+          inlineDeed.mouza, inlineDeed.khatian, inlineDeed.dag,
+          inlineDeed.area_decimal, inlineDeed.deed_date,
+          deedHash, deedJson,
+        ]
+      );
+    } catch (err: any) {
+      if (err?.code === '23505') {
+        throw new ConflictError(
+          `Deed number "${inlineDeed.deed_number}" already exists. Use a new deed number.`
+        );
+      }
+      throw err;
+    }
     // Point application at the newly-inserted deed
     application = { ...application, deed_number: inlineDeed.deed_number };
   }
@@ -130,7 +141,7 @@ export async function createTransfer(
     [application.parcel_id]
   );
   if (parcelRes.rowCount === 0) {
-    throw new Error(`Parcel "${application.parcel_id}" not found in land records.`);
+    throw new NotFoundError(`Parcel "${application.parcel_id}" not found in land records.`);
   }
   const parcel = parcelRes.rows[0];
 
@@ -140,7 +151,7 @@ export async function createTransfer(
     [application.deed_number]
   );
   if (deedRes.rowCount === 0) {
-    throw new Error(`Deed "${application.deed_number}" not found in deed registry.`);
+    throw new NotFoundError(`Deed "${application.deed_number}" not found in deed registry.`);
   }
   const deed = deedRes.rows[0];
 

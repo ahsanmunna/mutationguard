@@ -7,8 +7,9 @@ describe('Workflow State Machine Validation', () => {
     expect(isValidTransition('submitted', 'verified')).toBe(true);
     expect(isValidTransition('submitted', 'held')).toBe(true);
 
-    // verified -> under_review ONLY (held is set by rule engine, not manual transition from verified)
+    // verified -> under_review or rejected (held is set by the rule engine only)
     expect(isValidTransition('verified', 'under_review')).toBe(true);
+    expect(isValidTransition('verified', 'rejected')).toBe(true);
 
     // held -> rejected ONLY (held transfers cannot be revived)
     expect(isValidTransition('held', 'rejected')).toBe(true);
@@ -33,9 +34,10 @@ describe('Workflow State Machine Validation', () => {
     expect(isValidTransition('held', 'under_review')).toBe(false);
     expect(isValidTransition('held', 'approved')).toBe(false);
 
-    // Cannot transition verified directly to held or rejected
+    // Cannot skip from verified to approved/finalized, or move it to held manually
     expect(isValidTransition('verified', 'held')).toBe(false);
-    expect(isValidTransition('verified', 'rejected')).toBe(false);
+    expect(isValidTransition('verified', 'approved')).toBe(false);
+    expect(isValidTransition('verified', 'finalized')).toBe(false);
 
     // Cannot transition out of terminal finalized state
     expect(isValidTransition('finalized', 'under_review')).toBe(false);

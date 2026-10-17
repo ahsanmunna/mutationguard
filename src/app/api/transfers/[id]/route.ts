@@ -1,15 +1,16 @@
 /**
- * GET   /api/transfers/[id]  — fetch a single transfer with parcel and deed info
- * PATCH /api/transfers/[id]  — reviewer workflow transitions
+ * GET   /api/transfers/[id]  - one transfer (owner applicant or any reviewer)
+ * PATCH /api/transfers/[id]  - reviewer workflow transitions
  *
- * Phase 3 changes:
- * - Blocked transitions return HTTP 409 (not 400) and write an out-of-band audit event.
- * - Reviewer can only set: under_review | approved | finalized | rejected
- * - executeFinalization receives actorPrivKey for Ed25519 signing
+ * Blocked actions (skipped stage, stale finalize) return HTTP 409 and are written to the
+ * audit chain in a SEPARATE transaction AFTER the main one rolled back, so the record of
+ * the attempt is never lost.
+ * Role failures return 403 (and are logged by requireRole). Unknown errors return a
+ * generic 500.
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool, withTransaction } from '@/../db';
-import { requireRole } from '@/lib/auth';
+import { requireAuth, requireRole, UserSession } from '@/lib/auth';
 import {
   isValidTransition,
   executeFinalization,
@@ -17,13 +18,20 @@ import {
   REVIEWER_SETTABLE_STATUSES,
 } from '@/lib/workflow/machine';
 import { appendAuditEvent } from '@/lib/audit/ledger';
-import { sanitizeErrorMessage } from '@/../db/safety';
+import { logAuditEventSafe } from '@/lib/audit/log-event';
+import { handleApiError } from '@/lib/api-errors';
+import {
+  BadRequestError,
+  BlockedActionError,
+  NotFoundError,
+} from '@/lib/errors';
 
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const user = await requireAuth(req);
     const { id } = await params;
     const pool = getPool();
 
@@ -39,13 +47,15 @@ export async function GET(
       [id]
     );
 
-    if (transferRes.rowCount === 0) {
-      return NextResponse.json({ error: 'Transfer not found' }, { status: 404 });
+    const row = transferRes.rows[0];
+    // 404 (not 403) for someone else's application, so we do not reveal that it exists.
+    if (!row || (user.role === 'applicant' && row.applicant_username !== user.username)) {
+      throw new NotFoundError('Transfer not found');
     }
 
-    return NextResponse.json({ transfer: transferRes.rows[0] });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ transfer: row });
+  } catch (err) {
+    return handleApiError(err, 'GET /api/transfers/[id]');
   }
 }
 
@@ -53,114 +63,92 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    // Only reviewers can change workflow status
-    const currentUser = await requireRole(['reviewer'], req);
-    const { id }      = await params;
-    const body        = await req.json();
-    const targetStatus = body.status as TransferStatus;
+  let currentUser: UserSession | null = null;
 
+  try {
+    // 1. Only reviewers can change workflow status (403 + audit event otherwise)
+    currentUser = await requireRole(['reviewer'], req);
+    const { id } = await params;
+
+    let body: any;
+    try {
+      body = await req.json();
+    } catch {
+      throw new BadRequestError('Request body must be valid JSON.');
+    }
+    const targetStatus = body?.status as TransferStatus;
     if (!targetStatus) {
-      return NextResponse.json({ error: 'Target status is required' }, { status: 400 });
+      throw new BadRequestError('Target status is required.');
     }
 
-    // Phase 3: reviewer cannot manually set 'verified' or 'held' — rule engine only
+    // 2. Reviewer cannot manually set 'verified' or 'held' (rule engine only)
     if (!REVIEWER_SETTABLE_STATUSES.includes(targetStatus)) {
-      return NextResponse.json(
-        { error: `Reviewers cannot manually set status to "${targetStatus}". Allowed: ${REVIEWER_SETTABLE_STATUSES.join(', ')}.` },
-        { status: 400 }
+      throw new BadRequestError(
+        `Reviewers cannot set status "${targetStatus}". Allowed: ${REVIEWER_SETTABLE_STATUSES.join(', ')}.`
       );
     }
 
-    // Fetch actor's private key for audit signing (never returned to client)
-    const pool   = getPool();
-    const keyRes = await pool.query(
-      'SELECT private_key FROM users WHERE username = $1;',
-      [currentUser.username]
-    );
-    if (!keyRes.rows[0]?.private_key) {
-      return NextResponse.json({ error: 'Actor key not found. Run migrations and seed first.' }, { status: 500 });
+    // 3. Actor signing key (never returned to the client)
+    const pool = getPool();
+    const keyRes = await pool.query('SELECT private_key FROM users WHERE username = $1;', [currentUser.username]);
+    const actorPrivKey = keyRes.rows[0]?.private_key as string | undefined;
+    if (!actorPrivKey) {
+      throw new Error('Actor signing key not found. Run migrations and seed first.');
     }
-    const actorPrivKey = keyRes.rows[0].private_key as string;
 
-    // Fetch current transfer status BEFORE the transaction (for out-of-band audit on rejection)
-    const preCheckRes = await pool.query(
-      'SELECT status, parcel_id FROM transfers WHERE id = $1;',
-      [id]
-    );
+    // 4. Quick pre-check outside the transaction (cheap early exit for skipped stages)
+    const preCheckRes = await pool.query('SELECT status, parcel_id FROM transfers WHERE id = $1;', [id]);
     if (preCheckRes.rowCount === 0) {
-      return NextResponse.json({ error: `Transfer "${id}" not found.` }, { status: 404 });
+      throw new NotFoundError(`Transfer "${id}" not found.`);
     }
     const { status: currentStatus, parcel_id } = preCheckRes.rows[0];
 
-    // Phase 3: blocked transitions → HTTP 409 + out-of-band committed audit event
     if (!isValidTransition(currentStatus as TransferStatus, targetStatus)) {
-      // Write a BLOCKED_TRANSITION audit event in a SEPARATE transaction so it always commits.
-      try {
-        await withTransaction(async (client) => {
-          await appendAuditEvent(
-            client,
-            {
-              event_type:     'BLOCKED_TRANSITION',
-              entity_id:      id,
-              entity_type:    'transfer',
-              actor_username: currentUser.username,
-              actor_role:     currentUser.role,
-              payload: {
-                transfer_id:    id,
-                parcel_id,
-                from_status:    currentStatus,
-                attempted_to:   targetStatus,
-                reason:         'Invalid workflow state transition',
-              },
-            },
-            actorPrivKey
-          );
-        });
-      } catch (auditErr: any) {
-        // Log but don't fail — the 409 response is more important
-        console.error('[Audit] Failed to write BLOCKED_TRANSITION event:', sanitizeErrorMessage(auditErr.message));
-      }
-
-      return NextResponse.json(
+      throw new BlockedActionError(
+        `Invalid state transition: cannot move from "${currentStatus}" to "${targetStatus}".`,
+        'BLOCKED_TRANSITION',
+        id,
+        'transfer',
         {
-          error: `Invalid state transition: cannot move transfer from "${currentStatus}" to "${targetStatus}".`,
-          current_status: currentStatus,
-          target_status:  targetStatus,
-        },
-        { status: 409 }
+          transfer_id:  id,
+          parcel_id,
+          from_status:  currentStatus,
+          attempted_to: targetStatus,
+          reason:       'Invalid workflow state transition',
+        }
       );
     }
 
-    // Valid transition — execute inside a transaction
+    // 5. The real change, in ONE transaction
     const result = await withTransaction(async (client) => {
-      // Lock the transfer row for the update
-      const currentRes = await client.query(
-        'SELECT * FROM transfers WHERE id = $1 FOR UPDATE;',
-        [id]
-      );
+      const currentRes = await client.query('SELECT * FROM transfers WHERE id = $1 FOR UPDATE;', [id]);
       if (currentRes.rowCount === 0) {
-        throw new Error(`Transfer "${id}" not found`);
+        throw new NotFoundError(`Transfer "${id}" not found.`);
       }
       const currentTransfer = currentRes.rows[0];
 
-      // Re-check transition now that we hold the lock (another PATCH may have beaten us)
+      // Re-check now that we hold the row lock (another request may have changed it).
       if (!isValidTransition(currentTransfer.status as TransferStatus, targetStatus)) {
-        throw new Error(
-          `Invalid state transition: cannot move from "${currentTransfer.status}" to "${targetStatus}".`
+        throw new BlockedActionError(
+          `Invalid state transition: cannot move from "${currentTransfer.status}" to "${targetStatus}".`,
+          'BLOCKED_TRANSITION',
+          id,
+          'transfer',
+          {
+            transfer_id:  id,
+            parcel_id:    currentTransfer.parcel_id,
+            from_status:  currentTransfer.status,
+            attempted_to: targetStatus,
+            reason:       'Status changed by another request before this one finished',
+          }
         );
       }
 
-      // Handle finalization specially
       if (targetStatus === 'finalized') {
-        return await executeFinalization(client, id, currentUser, actorPrivKey);
+        return await executeFinalization(client, id, currentUser as UserSession, actorPrivKey);
       }
 
-      // Standard status update
-      await client.query(
-        'UPDATE transfers SET status = $1, updated_at = NOW() WHERE id = $2;',
-        [targetStatus, id]
-      );
+      await client.query('UPDATE transfers SET status = $1, updated_at = NOW() WHERE id = $2;', [targetStatus, id]);
 
       await appendAuditEvent(
         client,
@@ -168,14 +156,14 @@ export async function PATCH(
           event_type:     `TRANSFER_${targetStatus.toUpperCase()}`,
           entity_id:      id,
           entity_type:    'transfer',
-          actor_username: currentUser.username,
-          actor_role:     currentUser.role,
+          actor_username: (currentUser as UserSession).username,
+          actor_role:     (currentUser as UserSession).role,
           payload: {
             transfer_id:      id,
             parcel_id:        currentTransfer.parcel_id,
             previous_status:  currentTransfer.status,
             new_status:       targetStatus,
-            reviewer_comment: body.comment || null,
+            reviewer_comment: typeof body.comment === 'string' ? body.comment : null,
           },
         },
         actorPrivKey
@@ -185,8 +173,18 @@ export async function PATCH(
     });
 
     return NextResponse.json(result);
-  } catch (err: any) {
-    console.error('Error updating transfer status:', sanitizeErrorMessage(err.message));
-    return NextResponse.json({ error: err.message }, { status: 400 });
+  } catch (err) {
+    // A blocked action: the main transaction has rolled back, so record the attempt now.
+    if (err instanceof BlockedActionError && currentUser) {
+      await logAuditEventSafe({
+        event_type:     err.eventType,
+        entity_id:      err.entityId,
+        entity_type:    err.entityType,
+        actor_username: currentUser.username,
+        actor_role:     currentUser.role,
+        payload:        err.auditPayload,
+      });
+    }
+    return handleApiError(err, 'PATCH /api/transfers/[id]');
   }
 }

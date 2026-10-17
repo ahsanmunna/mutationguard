@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runSeed } from '@/../db/seed';
 import { requireRole } from '@/lib/auth';
+import { handleApiError } from '@/lib/api-errors';
 
 export async function POST(req: NextRequest) {
   if (process.env.DEMO_MODE !== 'true') {
@@ -15,8 +16,7 @@ export async function POST(req: NextRequest) {
       success: true,
       message: 'Demo state successfully reset to initial seed baseline.',
     });
-  } catch (err: any) {
-    console.error('Error during demo reset:', err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err) {
+    return handleApiError(err, 'POST /api/demo/reset');
   }
 }

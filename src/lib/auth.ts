@@ -7,8 +7,11 @@ import {
   SEEDED_USERS,
 } from './auth-types';
 import { getPool } from '../../db';
+import { UnauthorizedError, ForbiddenError } from './errors';
+import { logAuditEventSafe } from './audit/log-event';
 
 export * from './auth-types';
+export { UnauthorizedError, ForbiddenError } from './errors';
 
 /**
  * =========================================================================
@@ -73,46 +76,50 @@ export async function getCurrentUser(req?: Request | NextRequest): Promise<UserS
     // If DB is offline / during test runs without DB connection, check SEEDED_USERS
   }
 
-  // Fallback for tests/mocking
-  return SEEDED_USERS[username] || null;
-}
-
-/**
- * Custom error class for HTTP 401 Unauthorized
- */
-export class UnauthorizedError extends Error {
-  statusCode = 401;
-  constructor(message = 'UNAUTHORIZED: Please select a demo user') {
-    super(message);
-    this.name = 'UnauthorizedError';
+  // Hard-coded fallback ONLY under the test runner. Never in dev/production, so a
+  // database outage can not silently authenticate anyone from a code dictionary.
+  if (process.env.NODE_ENV === 'test') {
+    return SEEDED_USERS[username] || null;
   }
+  return null;
 }
 
-/**
- * Custom error class for HTTP 403 Forbidden
- */
-export class ForbiddenError extends Error {
-  statusCode = 403;
-  constructor(message = 'FORBIDDEN: User does not have sufficient privileges') {
-    super(message);
-    this.name = 'ForbiddenError';
+function describeRequest(req?: Request | NextRequest): { path: string; method: string } {
+  if (!req) return { path: 'unknown', method: 'unknown' };
+  try {
+    return { path: new URL(req.url).pathname, method: req.method };
+  } catch {
+    return { path: 'unknown', method: req.method };
   }
 }
 
 /**
  * Requires user to be authenticated. Throws UnauthorizedError (401).
+ * The attempt is logged (path + method only, no personal data) under the system actor.
+ * NOTE: requests with NO cookie are already stopped by middleware.ts before they get here.
  */
 export async function requireAuth(req?: Request | NextRequest): Promise<UserSession> {
   const user = await getCurrentUser(req);
   if (!user) {
-    throw new UnauthorizedError('UNAUTHORIZED: Authentication required. Please log in.');
+    if (req) {
+      await logAuditEventSafe({
+        event_type:     'UNAUTHENTICATED_ACCESS_ATTEMPT',
+        entity_id:      'API',
+        entity_type:    'security',
+        actor_username: 'system_audit',
+        actor_role:     'system',
+        payload:        describeRequest(req),
+      });
+    }
+    throw new UnauthorizedError();
   }
   return user;
 }
 
 /**
  * Requires user to have one of the specified roles.
- * Throws ForbiddenError (403) and writes a FORBIDDEN_ACCESS audit event.
+ * Throws ForbiddenError (403) AFTER writing a FORBIDDEN_ACCESS_ATTEMPT audit event
+ * that is signed by the offending user's own key (so the chain stays valid).
  */
 export async function requireRole(
   allowedRoles: UserRole[],
@@ -121,49 +128,16 @@ export async function requireRole(
   const user = await requireAuth(req);
 
   if (!allowedRoles.includes(user.role)) {
-    console.warn(
-      `[AUTH STUB 403 FORBIDDEN] User "${user.username}" (${user.role}) attempted access requiring [${allowedRoles.join(', ')}]`
-    );
-
-    // Asynchronously log audit event for forbidden attempt (best-effort, non-blocking)
-    try {
-      const pool = getPool();
-      // Fetch system audit key to sign the security event
-      const sysKeyRes = await pool.query(
-        "SELECT private_key FROM users WHERE username = 'system_audit';"
-      );
-      if (sysKeyRes.rows[0]?.private_key) {
-        const { appendAuditEvent } = await import('./audit/ledger');
-        const client = await pool.connect();
-        try {
-          await appendAuditEvent(
-            client,
-            {
-              event_type: 'FORBIDDEN_ACCESS_ATTEMPT',
-              entity_id: user.username,
-              entity_type: 'security',
-              actor_username: user.username,
-              actor_role: user.role,
-              payload: {
-                user: user.username,
-                role: user.role,
-                required_roles: allowedRoles,
-                timestamp: new Date().toISOString(),
-              },
-            },
-            sysKeyRes.rows[0].private_key
-          );
-        } finally {
-          client.release();
-        }
-      }
-    } catch {
-      // Don't fail the request if audit logging fails
-    }
-
-    throw new ForbiddenError(
-      `FORBIDDEN: Role "${user.role}" does not have required permissions (${allowedRoles.join(', ')})`
-    );
+    const { path, method } = describeRequest(req);
+    await logAuditEventSafe({
+      event_type:     'FORBIDDEN_ACCESS_ATTEMPT',
+      entity_id:      user.username,
+      entity_type:    'security',
+      actor_username: user.username,
+      actor_role:     user.role,
+      payload:        { path, method, required_roles: allowedRoles },
+    });
+    throw new ForbiddenError();
   }
 
   return user;

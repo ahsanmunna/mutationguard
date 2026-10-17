@@ -9,7 +9,7 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run tests/unit",
-    "test:db": "vitest run tests/concurrency",
+    "test:db": "vitest run tests/concurrency tests/db --no-file-parallelism",
     "check": "npm run typecheck && npm run test",
     "test:watch": "vitest",
     "db:migrate": "tsx db/migrate.ts",

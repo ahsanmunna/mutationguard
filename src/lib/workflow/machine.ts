@@ -6,7 +6,7 @@
  *
  * Rules:
  * - submitted  → verified (no findings) or held (findings)
- * - verified   → under_review (reviewer picks it up)
+ * - verified   → under_review | rejected
  * - held       → rejected ONLY (reviewer rejects; cannot go back to active)
  * - under_review → approved | rejected
  * - approved   → finalized | rejected
@@ -20,6 +20,7 @@
 import { PoolClient } from 'pg';
 import { appendAuditEvent } from '../audit/ledger';
 import { UserSession } from '../auth';
+import { BlockedActionError, NotFoundError } from '../errors';
 
 export type TransferStatus =
   | 'submitted'
@@ -37,7 +38,7 @@ export type TransferStatus =
  */
 export const ALLOWED_TRANSITIONS: Record<TransferStatus, TransferStatus[]> = {
   submitted:    ['verified', 'held'],
-  verified:     ['under_review'],
+  verified:     ['under_review', 'rejected'],
   held:         ['rejected'],
   under_review: ['approved', 'rejected'],
   approved:     ['finalized', 'rejected'],
@@ -91,14 +92,24 @@ export async function executeFinalization(
   );
 
   if (transferRes.rowCount === 0) {
-    throw new Error(`Transfer with ID "${transferId}" not found`);
+    throw new NotFoundError(`Transfer "${transferId}" not found.`);
   }
 
   const transfer = transferRes.rows[0];
 
   if (transfer.status !== 'approved') {
-    throw new Error(
-      `Cannot finalize transfer: current status is "${transfer.status}", but only "approved" transfers can be finalized.`
+    throw new BlockedActionError(
+      `Cannot finalize: current status is "${transfer.status}", only "approved" transfers can be finalized.`,
+      'TRANSFER_FINALIZE_BLOCKED',
+      transfer.id,
+      'transfer',
+      {
+        transfer_id: transfer.id,
+        parcel_id:   transfer.parcel_id,
+        from_status: transfer.status,
+        attempted_to: 'finalized',
+        reason:      'Only approved transfers can be finalized',
+      }
     );
   }
 
@@ -109,7 +120,7 @@ export async function executeFinalization(
   );
 
   if (parcelRes.rowCount === 0) {
-    throw new Error(`Parcel "${transfer.parcel_id}" not found`);
+    throw new NotFoundError(`Parcel "${transfer.parcel_id}" not found.`);
   }
 
   const parcel = parcelRes.rows[0];
@@ -117,12 +128,29 @@ export async function executeFinalization(
   // 3. Re-verify that the seller on the transfer still matches the current owner.
   //    This guard catches the edge case where another transfer was finalized
   //    between 'approved' and this finalization attempt.
-  const sellerNameClean = transfer.seller_name.trim().toLowerCase();
-  const ownerNameClean  = parcel.current_owner_name.trim().toLowerCase();
-  if (sellerNameClean !== ownerNameClean) {
-    throw new Error(
-      `Finalization rejected: seller "${transfer.seller_name}" does not match ` +
-      `current parcel owner "${parcel.current_owner_name}". Ownership may have changed.`
+  const nameMismatch =
+    transfer.seller_name.trim().toLowerCase() !== parcel.current_owner_name.trim().toLowerCase();
+  const nidMismatch = Boolean(
+    transfer.seller_nid && parcel.current_owner_nid && transfer.seller_nid !== parcel.current_owner_nid
+  );
+  if (nameMismatch || nidMismatch) {
+    throw new BlockedActionError(
+      `Finalization blocked: seller "${transfer.seller_name}" is no longer the registered owner ` +
+      `("${parcel.current_owner_name}"). Ownership may have changed.`,
+      'TRANSFER_FINALIZE_BLOCKED',
+      transfer.id,
+      'transfer',
+      {
+        transfer_id:        transfer.id,
+        parcel_id:          transfer.parcel_id,
+        from_status:        transfer.status,
+        attempted_to:       'finalized',
+        reason:             'Seller no longer matches the registered owner',
+        seller_name:        transfer.seller_name,
+        seller_nid:         transfer.seller_nid,
+        registered_owner:   parcel.current_owner_name,
+        registered_owner_nid: parcel.current_owner_nid,
+      }
     );
   }
 

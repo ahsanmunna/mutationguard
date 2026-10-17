@@ -157,6 +157,24 @@ export async function appendAuditEvent(
   // 6. Sign with actor's Ed25519 private key.
   const signature = signData(recordHash, actorPrivKey);
 
+  // 6b. SAFETY CHECK: the signature must verify against the public key REGISTERED for
+  //     this actor. If a caller signs with the wrong key (e.g. the system key for a
+  //     user's event) the verifier would later report a false "tampering" alarm, so we
+  //     refuse to write the event at all instead of silently corrupting the chain.
+  const registeredKeyRes = await client.query(
+    'SELECT public_key FROM users WHERE username = $1;',
+    [params.actor_username]
+  );
+  const registeredPublicKey = registeredKeyRes.rows[0]?.public_key as string | undefined;
+  if (!registeredPublicKey) {
+    throw new Error(`Audit event refused: actor "${params.actor_username}" has no registered public key.`);
+  }
+  if (!verifySignature(recordHash, signature, registeredPublicKey)) {
+    throw new Error(
+      `Audit event refused: signing key does not match the registered public key of actor "${params.actor_username}".`
+    );
+  }
+
   // 7. Insert — note: payload is TEXT (not ::jsonb), timestamp is TEXT.
   await client.query(
     `INSERT INTO audit_ledger (

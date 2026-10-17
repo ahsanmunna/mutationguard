@@ -1,108 +1,122 @@
+/**
+ * CONCURRENCY TEST (real PostgreSQL, run with: npm run test:db)
+ *
+ * Two DIFFERENT buyers try to buy the SAME parcel (P-001) at the same instant, on two
+ * separate database connections. The partial unique index must let exactly ONE become
+ * active; the other must be stored as 'held' with a DOUBLE_SALE finding.
+ * We repeat it 20 times on a freshly re-seeded database to catch timing-dependent bugs.
+ */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { Pool } from 'pg';
 import { assertTestDatabaseSafety, getTestPool } from '../setup';
+import { runSeed } from '../../db/seed';
+import { closePool } from '../../db';
 import { createTransfer } from '../../src/lib/workflow/transfer-service';
-import { SEEDED_USERS } from '../../src/lib/auth';
+import { verifyAuditChain } from '../../src/lib/audit/ledger';
+import { SEEDED_USERS } from '../../src/lib/auth-types';
 import { MutationApplication } from '../../src/lib/rules/types';
 
-describe('Concurrency Protection: Simultaneous Conflicting Submissions', () => {
+const ROUNDS = 20;
+
+describe('Concurrency protection: simultaneous conflicting submissions', () => {
   let pool: Pool;
 
   beforeAll(async () => {
     pool = getTestPool();
-    // Enforce generic test safety: abort if not a test database ending in '_test'
     await assertTestDatabaseSafety(pool);
 
-    // Verify tables exist: Phase 6 requirement: fails loudly if DB not migrated
-    const tableCheck = await pool.query(`
-      SELECT to_regclass('public.transfers') as table_exists;
-    `);
-    if (!tableCheck.rows[0]?.table_exists) {
-      throw new Error(
-        'DATABASE INTEGRATION TEST FAILURE: Database tables are not migrated! ' +
-        'Apply migrations with "npm run db:migrate" before running database tests.'
-      );
+    const tableCheck = await pool.query(`SELECT to_regclass('public.transfers') AS t;`);
+    if (!tableCheck.rows[0]?.t) {
+      throw new Error('DATABASE TEST FAILURE: tables are not migrated. Run "npm run db:migrate" against the test database first.');
+    }
+    if (process.env.MUTATIONGUARD_ALLOW_DB_WRITE !== 'true') {
+      throw new Error('DATABASE TEST FAILURE: set MUTATIONGUARD_ALLOW_DB_WRITE=true in .env.local so the tests may re-seed the TEST database.');
     }
   });
 
   afterAll(async () => {
-    if (pool) {
-      await pool.end();
-    }
+    if (pool) await pool.end();
+    await closePool();
   });
 
-  it('guarantees that concurrent submissions for P-001 result in 1 active and 1 held transfer', async () => {
-    const client1 = await pool.connect();
-    const client2 = await pool.connect();
+  it(
+    `exactly one of two simultaneous sales becomes active, in each of ${ROUNDS} rounds`,
+    async () => {
+      for (let round = 1; round <= ROUNDS; round++) {
+        await runSeed(pool); // clean state + valid chain every round
 
-    try {
-      const applicantKarim = SEEDED_USERS['karim_chowdhury'];
-      const applicantHasan = SEEDED_USERS['hasan_mahmud'];
+        const karim = SEEDED_USERS['karim_chowdhury'];
+        const hasan = SEEDED_USERS['hasan_mahmud'];
+        const karimKey = (await pool.query(`SELECT private_key FROM users WHERE username = 'karim_chowdhury'`)).rows[0].private_key;
+        const hasanKey = (await pool.query(`SELECT private_key FROM users WHERE username = 'hasan_mahmud'`)).rows[0].private_key;
 
-      const karimKey = (
-        await pool.query('SELECT private_key FROM users WHERE username = $1', ['karim_chowdhury'])
-      ).rows[0]?.private_key || '';
+        const base = {
+          parcel_id: 'P-001',
+          seller_name: 'Rahim Uddin',
+          seller_nid: 'NID-DEMO-0001',
+          application_mouza: 'Dhanmondi-102',
+          application_khatian: 'K-501',
+          application_dag: 'D-1001',
+          application_area_decimal: 5.0,
+        };
+        const app1: MutationApplication = {
+          ...base,
+          deed_number: 'DEED-2026-001',
+          applicant_username: karim.username,
+          buyer_name: 'Karim Chowdhury',
+          buyer_nid: 'NID-DEMO-0002',
+        };
+        const app2: MutationApplication = {
+          ...base,
+          deed_number: 'DEED-2026-002',
+          applicant_username: hasan.username,
+          buyer_name: 'Hasan Mahmud',
+          buyer_nid: 'NID-DEMO-0003',
+        };
 
-      const hasanKey = (
-        await pool.query('SELECT private_key FROM users WHERE username = $1', ['hasan_mahmud'])
-      ).rows[0]?.private_key || '';
+        const client1 = await pool.connect();
+        const client2 = await pool.connect();
+        try {
+          const submit = async (client: typeof client1, app: MutationApplication, user: typeof karim, key: string) => {
+            await client.query('BEGIN');
+            try {
+              const res = await createTransfer(client, app, user, key);
+              await client.query('COMMIT');
+              return res;
+            } catch (err) {
+              await client.query('ROLLBACK').catch(() => {});
+              throw err;
+            }
+          };
 
-      const app1: MutationApplication = {
-        parcel_id: 'P-001',
-        deed_number: 'DEED-2026-001',
-        applicant_username: applicantKarim.username,
-        seller_name: 'Rahim Uddin',
-        seller_nid: 'NID-DEMO-0001',
-        buyer_name: 'Karim Chowdhury',
-        buyer_nid: 'NID-DEMO-0002',
-        application_mouza: 'Dhanmondi-102',
-        application_khatian: 'K-501',
-        application_dag: 'D-1001',
-        application_area_decimal: 5.0,
-      };
+          // Fire both at the same moment on two separate connections.
+          const [res1, res2] = await Promise.all([
+            submit(client1, app1, karim, karimKey),
+            submit(client2, app2, hasan, hasanKey),
+          ]);
 
-      const app2: MutationApplication = {
-        parcel_id: 'P-001',
-        deed_number: 'DEED-2026-002',
-        applicant_username: applicantHasan.username,
-        seller_name: 'Rahim Uddin',
-        seller_nid: 'NID-DEMO-0001',
-        buyer_name: 'Hasan Mahmud',
-        buyer_nid: 'NID-DEMO-0003',
-        application_mouza: 'Dhanmondi-102',
-        application_khatian: 'K-501',
-        application_dag: 'D-1001',
-        application_area_decimal: 5.0,
-      };
+          const statuses = [res1.status, res2.status].sort();
+          expect(statuses, `round ${round}`).toEqual(['held', 'verified']);
 
-      // Execute both submissions concurrently
-      const [res1, res2] = await Promise.all([
-        (async () => {
-          await client1.query('BEGIN');
-          const res = await createTransfer(client1, app1, applicantKarim, karimKey);
-          await client1.query('COMMIT');
-          return res;
-        })(),
-        (async () => {
-          await client2.query('BEGIN');
-          const res = await createTransfer(client2, app2, applicantHasan, hasanKey);
-          await client2.query('COMMIT');
-          return res;
-        })(),
-      ]);
+          // The held one carries the DOUBLE_SALE finding.
+          const held = res1.status === 'held' ? res1 : res2;
+          expect(held.findings.some((f) => f.rule_id === 'DOUBLE_SALE'), `round ${round}`).toBe(true);
 
-      const statuses = [res1.status, res2.status];
-      expect(statuses).toContain('verified');
-      expect(statuses).toContain('held');
+          // Database truth: exactly one ACTIVE transfer for the parcel.
+          const active = await pool.query(
+            `SELECT count(*)::int AS n FROM transfers
+             WHERE parcel_id = 'P-001' AND status IN ('submitted','verified','under_review','approved')`
+          );
+          expect(active.rows[0].n, `round ${round}`).toBe(1);
 
-      // The held submission must contain DOUBLE_SALE finding
-      const heldRes = res1.status === 'held' ? res1 : res2;
-      const doubleSaleFinding = heldRes.findings.find((f) => f.rule_id === 'DOUBLE_SALE');
-      expect(doubleSaleFinding).toBeDefined();
-      expect(doubleSaleFinding?.action).toBe('hold');
-    } finally {
-      client1.release();
-      client2.release();
-    }
-  });
+          // And the audit chain is still valid after the race.
+          expect(((await verifyAuditChain(pool)) as any).valid, `round ${round}`).toBe(true);
+        } finally {
+          client1.release();
+          client2.release();
+        }
+      }
+    },
+    180000
+  );
 });

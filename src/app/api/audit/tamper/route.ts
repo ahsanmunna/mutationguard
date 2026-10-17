@@ -11,6 +11,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withTransaction } from '@/../db';
 import { requireRole } from '@/lib/auth';
+import { handleApiError } from '@/lib/api-errors';
+import { BadRequestError } from '@/lib/errors';
 
 export async function POST(req: NextRequest) {
   if (process.env.DEMO_MODE !== 'true') {
@@ -19,11 +21,16 @@ export async function POST(req: NextRequest) {
 
   try {
     await requireRole(['reviewer'], req);
-    const body        = await req.json();
-    const sequenceNum = Number(body.sequence_num);
+    let body: any;
+    try {
+      body = await req.json();
+    } catch {
+      throw new BadRequestError('Request body must be valid JSON.');
+    }
+    const sequenceNum = Number(body?.sequence_num);
 
     if (!sequenceNum) {
-      return NextResponse.json({ error: 'Sequence number is required' }, { status: 400 });
+      throw new BadRequestError('Sequence number is required');
     }
 
     // payload is now TEXT — append a fake field to corrupt the canonical JSON
@@ -40,7 +47,7 @@ export async function POST(req: NextRequest) {
       success: true,
       message: `Record at sequence #${sequenceNum} maliciously altered. Run integrity check to observe failure.`,
     });
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+  } catch (err) {
+    return handleApiError(err, 'POST /api/audit/tamper');
   }
 }
