@@ -19,7 +19,8 @@ function LoginForm() {
       nameEn: 'Farhan Ahmed (AC Land)',
       nameBn: 'ফারহান আহমেদ (সহকারী কমিশনার ভূমি)',
       role: 'reviewer',
-      roleBadge: 'Reviewer / কর্মকর্তা',
+      roleBadgeBn: 'কর্মকর্তা',
+      roleBadgeEn: 'Reviewer',
       descEn: 'Reviews applications, examines rule conflicts, approves or rejects transfers, and finalizes mutations.',
       descBn: 'আবেদন পর্যালোচনা, বিরোধ ও নিয়ম নিরীক্ষা, অনুমোদন/বাতিল এবং নামজারি চূড়ান্ত নিষ্পত্তি করেন।',
       icon: '🏛️',
@@ -30,7 +31,8 @@ function LoginForm() {
       nameEn: 'Rahim Uddin',
       nameBn: 'রহিম উদ্দিন',
       role: 'applicant',
-      roleBadge: 'Land Owner / বিক্রেতা',
+      roleBadgeBn: 'জমির মালিক',
+      roleBadgeEn: 'Land Owner',
       descEn: 'Registered owner of parcel P-001 (5.00 decimal in Dhanmondi-102).',
       descBn: 'ধানমন্ডি-১০২ মৌজার দাগ নং ১০০০১ এর ৫.০০ শতক জমির বৈধ নিবন্ধিত মালিক।',
       icon: '📜',
@@ -41,7 +43,8 @@ function LoginForm() {
       nameEn: 'Karim Chowdhury',
       nameBn: 'করিম চৌধুরী',
       role: 'applicant',
-      roleBadge: 'Buyer 1 / প্রথম ক্রেতা',
+      roleBadgeBn: 'প্রথম ক্রেতা',
+      roleBadgeEn: 'Buyer 1',
       descEn: 'Legitimate buyer for P-001 under valid Deed DEED-2026-001.',
       descBn: 'দলিল DEED-2026-001 এর মাধ্যমে ৫.০০ শতক জমির প্রথম বৈধ ক্রেতা।',
       icon: '🟢',
@@ -52,7 +55,8 @@ function LoginForm() {
       nameEn: 'Hasan Mahmud',
       nameBn: 'হাসান মাহমুদ',
       role: 'applicant',
-      roleBadge: 'Buyer 2 / দ্বিতীয় ক্রেতা',
+      roleBadgeBn: 'দ্বিতীয় ক্রেতা',
+      roleBadgeEn: 'Buyer 2',
       descEn: 'Second buyer for P-001 under conflicting Deed DEED-2026-002 (triggers DOUBLE_SALE rule).',
       descBn: 'একই জমির দ্বিতীয় ক্রেতা (যা দাখিল করলে দ্বৈত হস্তান্তর সনাক্তকরণ নিয়ম সক্রিয় হয়)।',
       icon: '🔴',
@@ -73,7 +77,7 @@ function LoginForm() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to login');
+        throw new Error(data.error || (language === 'bn' ? 'লগইন ব্যর্থ হয়েছে' : 'Failed to login'));
       }
 
       window.location.href = redirectPath;
@@ -84,24 +88,28 @@ function LoginForm() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 py-4 sm:py-8">
+    <div className="max-w-4xl mx-auto space-y-6 sm:space-y-8 py-4 sm:py-8 px-1">
       <div className="text-center space-y-3">
-        <div className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-          🔐 Stage A Academic Authentication Stub
+        <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+          <span>🔐</span>
+          <span>
+            {language === 'bn' ? 'একাডেমিক প্রমাণীকরণ ডেমো স্টাব' : 'Stage A Academic Authentication Stub'}
+          </span>
         </div>
         <h1 className="text-2xl sm:text-4xl font-extrabold text-slate-900 dark:text-white">
           {language === 'bn' ? 'ডেমো অ্যাকাউন্ট নির্বাচন ও লগইন' : 'Select a Demo Persona to Sign In'}
         </h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400 max-w-xl mx-auto">
+        <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 max-w-xl mx-auto">
           {language === 'bn'
-            ? 'হ্যাকাতন উপস্থাপনার জন্য পূর্ব-নির্ধারিত টেস্ট অ্যাকাউন্ট নির্বাচন করুন। বিচারকদের সামনে বিভিন্ন রোল প্রদর্শন করতে এক ক্লিকেই লগইন করুন।'
+            ? 'হ্যাকাতন উপস্থাপনার জন্য পূর্ব-নির্ধারিত টেস্ট অ্যাকাউন্ট নির্বাচন করুন। বিচারকদের সামনে বিভিন্ন ভূমিকা প্রদর্শন করতে এক ক্লিকেই লগইন করুন।'
             : 'Click any role below to instantly authenticate as that actor and test workflow transitions and conflict detection.'}
         </p>
       </div>
 
       {error && (
-        <div className="p-4 rounded-xl bg-rose-50 dark:bg-rose-950 border border-rose-300 text-rose-800 dark:text-rose-200 text-sm font-semibold text-center">
-          ❌ {error}
+        <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950 border border-rose-300 text-rose-800 dark:text-rose-200 text-sm font-semibold text-center flex items-center justify-center gap-2">
+          <span>❌</span>
+          <span>{error}</span>
         </div>
       )}
 
@@ -109,13 +117,13 @@ function LoginForm() {
         {demoAccounts.map((account) => (
           <div
             key={account.username}
-            className={`p-6 rounded-2xl border-2 transition shadow-sm hover:shadow-md flex flex-col justify-between ${account.color}`}
+            className={`p-6 rounded-3xl border-2 transition shadow-sm hover:shadow-md flex flex-col justify-between ${account.color}`}
           >
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-3xl">{account.icon}</span>
-                <span className="text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-white dark:bg-slate-900 shadow-xs border">
-                  {account.roleBadge}
+                <span className="text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-white dark:bg-slate-900 shadow-xs border border-slate-200 dark:border-slate-800">
+                  {language === 'bn' ? account.roleBadgeBn : account.roleBadgeEn}
                 </span>
               </div>
               <div>
@@ -132,10 +140,13 @@ function LoginForm() {
             <button
               onClick={() => handleLogin(account.username)}
               disabled={loggingIn !== null}
-              className="mt-6 w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 font-bold text-xs transition disabled:opacity-50 flex items-center justify-center gap-2"
+              className="mt-6 min-h-[44px] w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 font-bold text-xs transition disabled:opacity-50 flex items-center justify-center gap-2 shadow-sm"
             >
               {loggingIn === account.username ? (
-                <span>লগইন হচ্ছে...</span>
+                <>
+                  <span className="animate-spin">⏳</span>
+                  <span>{language === 'bn' ? 'লগইন হচ্ছে...' : 'Signing in...'}</span>
+                </>
               ) : (
                 <span>
                   {language === 'bn'
@@ -148,15 +159,15 @@ function LoginForm() {
         ))}
       </div>
 
-      <div className="p-4 rounded-xl bg-slate-100 dark:bg-slate-900/50 text-center text-xs text-slate-500 space-y-1">
-        <p className="font-semibold">
+      <div className="p-4 rounded-2xl bg-slate-100 dark:bg-slate-900/50 text-center text-xs text-slate-500 space-y-1 border border-slate-200 dark:border-slate-800">
+        <p className="font-semibold text-slate-700 dark:text-slate-300">
           {language === 'bn'
-            ? 'স্টেজ বি নোট: এটি একটি পরীক্ষামূলক ডেমো লগইন স্টাব।'
-            : 'Stage B Security Note: This is a clearly marked temporary demo stub.'}
+            ? 'নিরাপত্তা তথ্য: এটি একটি স্পষ্ট পরীক্ষামূলক ডেমো লগইন স্টাব।'
+            : 'Security Note: This is a clearly marked temporary demo stub.'}
         </p>
         <p>
           {language === 'bn'
-            ? 'চূড়ান্ত উৎপাদনে ক্রিপ্টোগ্রাফিক সেশন কুকি ও পাসওয়ার্ড ভেরিফিকেশন যুক্ত হবে।'
+            ? 'প্রোডাকশনে এই স্টাবটি বি-ক্রিপ্ট পাসওয়ার্ড অথেনটিকেশন ও সাইনড সেশন দিয়ে প্রতিস্থাপিত হবে।'
             : 'Production deployment will replace this stub with bcrypt password authentication and signed HTTP-only sessions.'}
         </p>
       </div>
@@ -165,11 +176,13 @@ function LoginForm() {
 }
 
 export default function LoginPage() {
+  const { language } = useLanguage();
   return (
     <Suspense
       fallback={
-        <div className="py-24 text-center text-sm font-semibold text-slate-500">
-          Loading login options...
+        <div className="py-24 text-center text-sm font-semibold text-slate-500 flex items-center justify-center gap-2">
+          <span className="animate-spin">⏳</span>
+          <span>{language === 'bn' ? 'লগইন বিকল্প লোড হচ্ছে...' : 'Loading login options...'}</span>
         </div>
       }
     >

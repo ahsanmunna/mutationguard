@@ -9,7 +9,7 @@ import { localName, formatNumber, formatDate } from '@/lib/i18n/translations';
 export default function PublicVerifyPage() {
   const params = useParams();
   const id = params?.id as string;
-  const { t, language } = useLanguage();
+  const { language } = useLanguage();
 
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -23,7 +23,7 @@ export default function PublicVerifyPage() {
         const res = await fetch(`/api/public/verify/${id}`);
         const json = await res.json();
         if (!res.ok) {
-          throw new Error(json.error || 'Failed to verify record');
+          throw new Error(json.error || (language === 'bn' ? 'রেকর্ডটি যাচাই করা যায়নি' : 'Failed to verify record'));
         }
         setData(json);
       } catch (err: any) {
@@ -33,7 +33,7 @@ export default function PublicVerifyPage() {
       }
     }
     if (id) loadData();
-  }, [id]);
+  }, [id, language]);
 
   if (loading) {
     return (
@@ -48,7 +48,7 @@ export default function PublicVerifyPage() {
 
   if (error || !data) {
     return (
-      <div className="max-w-lg mx-auto py-16 text-center space-y-4">
+      <div className="max-w-lg mx-auto py-16 text-center space-y-4 px-3">
         <div className="text-4xl">❌</div>
         <h2 className="text-xl font-bold text-slate-900 dark:text-white">
           {language === 'bn' ? 'রেকর্ডটি পাওয়া যায়নি' : 'Public Record Not Found'}
@@ -60,10 +60,10 @@ export default function PublicVerifyPage() {
     );
   }
 
-  const { transfer, parcel, deed, finalization_audit_record, is_deed_anchored, qr_code_data_url } = data;
+  const { transfer, deed, finalization_audit_record, is_deed_anchored, qr_code_data_url } = data;
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6 py-4">
+    <div className="max-w-3xl mx-auto space-y-6 py-4 px-1">
       {/* Official Certificate Card */}
       <div className="p-6 sm:p-10 rounded-3xl bg-white dark:bg-slate-900 border-2 border-emerald-600/40 shadow-xl space-y-6">
         <div className="text-center space-y-2 border-b border-slate-200 dark:border-slate-800 pb-6">
@@ -159,7 +159,7 @@ export default function PublicVerifyPage() {
             <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60">
               <span className="text-slate-500 block">{language === 'bn' ? 'মৌজা ও দাগ:' : 'Mouza & Dag:'}</span>
               <span className="font-semibold text-slate-900 dark:text-white">
-                {transfer.application_mouza}, দাগ {transfer.application_dag}
+                {transfer.application_mouza}, {language === 'bn' ? 'দাগ' : 'Dag'} {transfer.application_dag}
               </span>
             </div>
           </div>
@@ -197,7 +197,7 @@ export default function PublicVerifyPage() {
               <span>🏛️</span>
               <span>
                 {language === 'bn'
-                  ? `চূড়ান্ত অডিট ব্লক #${finalization_audit_record.sequence_num} নিশ্চিতকৃত`
+                  ? `চূড়ান্ত অডিট ব্লক #${formatNumber(finalization_audit_record.sequence_num, language)} নিশ্চিতকৃত`
                   : `Finalization Audit Block #${finalization_audit_record.sequence_num} Confirmed`}
               </span>
             </div>
@@ -213,9 +213,10 @@ export default function PublicVerifyPage() {
         <div className="text-center pt-2">
           <button
             onClick={() => window.print()}
-            className="px-6 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 font-bold text-xs shadow-md transition"
+            className="min-h-[44px] px-6 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 font-bold text-xs shadow-md transition inline-flex items-center gap-2"
           >
-            🖨️ {language === 'bn' ? 'সনদ প্রিন্ট করুন' : 'Print Official Certificate'}
+            <span>🖨️</span>
+            <span>{language === 'bn' ? 'সনদ প্রিন্ট করুন' : 'Print Official Certificate'}</span>
           </button>
         </div>
       </div>

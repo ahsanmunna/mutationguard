@@ -29,21 +29,24 @@ export default function HomePage() {
         <div className="mt-8 flex flex-wrap justify-center gap-4">
           <Link
             href="/transfers/new"
-            className="px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-lg hover:shadow-emerald-600/30 transition-all"
+            className="min-h-[44px] px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-lg hover:shadow-emerald-600/30 transition-all inline-flex items-center gap-1.5"
           >
-            {t('nav_submit')} →
+            <span>➕</span>
+            <span>{t('nav_submit')} →</span>
           </Link>
           <Link
             href="/dashboard"
-            className="px-6 py-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-semibold text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all"
+            className="min-h-[44px] px-6 py-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-semibold text-sm hover:bg-slate-50 dark:hover:bg-slate-700 transition-all inline-flex items-center gap-1.5"
           >
-            {t('nav_dashboard')}
+            <span>📋</span>
+            <span>{t('nav_dashboard')}</span>
           </Link>
           <Link
             href="/demo"
-            className="px-6 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm shadow-md transition-all"
+            className="min-h-[44px] px-6 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm shadow-md transition-all inline-flex items-center gap-1.5"
           >
-            🎮 {t('nav_demo')}
+            <span>🎮</span>
+            <span>{t('nav_demo')}</span>
           </Link>
         </div>
       </section>
@@ -128,26 +131,35 @@ export default function HomePage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-xs sm:text-sm text-slate-300">
           <div className="space-y-2">
             <span className="text-xl">🔒</span>
-            <h4 className="font-bold text-white">PostgreSQL Partial Unique Index</h4>
+            <h4 className="font-bold text-white">
+              {language === 'bn' ? 'আংশিক ইউনিক ইনডেক্স' : 'PostgreSQL Partial Unique Index'}
+            </h4>
             <p>
-              <code>one_active_transfer_per_parcel</code> enforces that only one active transfer
-              exists per parcel at the physical database layer, stopping race conditions.
+              {language === 'bn'
+                ? 'one_active_transfer_per_parcel ইনডেক্স ডাটাবেস লেয়ারে প্রতিটি প্লটে মাত্র একটি সক্রিয় আবেদন নিশ্চিত করে কনকারেন্সি প্রতিরোধ করে।'
+                : 'one_active_transfer_per_parcel enforces that only one active transfer exists per parcel at the physical database layer, stopping race conditions.'}
             </p>
           </div>
           <div className="space-y-2">
             <span className="text-xl">⛓️</span>
-            <h4 className="font-bold text-white">Tamper-Evident SHA-256 Ledger</h4>
+            <h4 className="font-bold text-white">
+              {language === 'bn' ? 'ক্রিপ্টোগ্রাফিক SHA-256 লেজার' : 'Tamper-Evident SHA-256 Ledger'}
+            </h4>
             <p>
-              Every workflow state change is cryptographically chained and signed with Ed25519 using
-              transaction-scoped advisory locks. Any offline SQL tampering breaks the chain.
+              {language === 'bn'
+                ? 'প্রতিটি ওয়ার্কফ্লো রূপান্তর ট্রানজ্যাকশন-স্কোপড অ্যাডভাইজরি লক ও Ed25519 দিয়ে স্বাক্ষরিত। কোনো টেম্পারিং হলে চেইন ভেঙে যায়।'
+                : 'Every workflow state change is cryptographically chained and signed with Ed25519 using transaction-scoped advisory locks. Any offline SQL tampering breaks the chain.'}
             </p>
           </div>
           <div className="space-y-2">
             <span className="text-xl">⚡</span>
-            <h4 className="font-bold text-white">Atomic Finalization</h4>
+            <h4 className="font-bold text-white">
+              {language === 'bn' ? 'অ্যাটোমিক চূড়ান্ত নিষ্পত্তি' : 'Atomic Finalization'}
+            </h4>
             <p>
-              Approved mutations update parcel ownership, append ownership history, update transfer
-              status, and write audit events in a single all-or-nothing SQL transaction.
+              {language === 'bn'
+                ? 'অনুমোদিত আবেদনসমূহ পার্সেল মালিকানা, ইতিহাস, স্ট্যাটাস ও অডিট ইভেন্ট একক অল-অর-নাথিং এসকিউএল ট্রানজ্যাকশনে হালনাগাদ করে।'
+                : 'Approved mutations update parcel ownership, append ownership history, update transfer status, and write audit events in a single all-or-nothing SQL transaction.'}
             </p>
           </div>
         </div>

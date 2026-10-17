@@ -8,7 +8,7 @@ import { localName, formatNumber, formatDate } from '@/lib/i18n/translations';
 import { SEEDED_USERS, DEMO_COOKIE_NAME } from '@/lib/auth-types';
 
 export default function DashboardPage() {
-  const { t, language } = useLanguage();
+  const { language } = useLanguage();
   const [transfers, setTransfers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
@@ -71,7 +71,7 @@ export default function DashboardPage() {
       });
       const data = await res.json();
       if (!res.ok) {
-        alert(data.error || 'Transition failed');
+        alert(data.error || (language === 'bn' ? 'স্ট্যাটাস পরিবর্তন ব্যর্থ হয়েছে' : 'Transition failed'));
       } else {
         await fetchTransfers();
       }
@@ -83,12 +83,12 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 sm:space-y-8 max-w-7xl mx-auto">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+          <div className="flex flex-wrap items-center gap-2 mb-1.5">
+            <span className="text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
               {isReviewer
                 ? language === 'bn'
                   ? 'সহকারী কমিশনার (ভূমি) কিউ'
@@ -98,7 +98,15 @@ export default function DashboardPage() {
                 : 'Applicant Dashboard'}
             </span>
             <span className="text-xs text-slate-500 font-mono">
-              @{currentUser.username} ({currentUser.role})
+              @{currentUser.username} (
+              {currentUser.role === 'reviewer'
+                ? language === 'bn'
+                  ? 'কর্মকর্তা'
+                  : 'Reviewer'
+                : language === 'bn'
+                ? 'আবেদনকারী'
+                : 'Applicant'}
+              )
             </span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white">
@@ -110,7 +118,7 @@ export default function DashboardPage() {
               ? 'আমার নামজারি আবেদনসমূহ'
               : 'My Mutation Applications'}
           </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
             {isReviewer
               ? language === 'bn'
                 ? 'দাখিলকৃত আবেদনসমূহ পর্যালোচনা, বিরোধ নিষ্পত্তি ও অনুমোদনের সরকারি প্যানেল।'
@@ -123,14 +131,15 @@ export default function DashboardPage() {
 
         <Link
           href="/transfers/new"
-          className="inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition"
+          className="min-h-[44px] inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm shadow-sm transition gap-1.5 shrink-0"
         >
-          + {language === 'bn' ? 'নতুন আবেদন দাখিল' : 'Submit New Application'}
+          <span>➕</span>
+          <span>{language === 'bn' ? 'নতুন আবেদন দাখিল' : 'Submit New Application'}</span>
         </Link>
       </div>
 
       {/* Metrics Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
         <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
           <p className="text-xs text-slate-500 font-semibold">
             {language === 'bn' ? 'মোট আবেদন' : 'Total Applications'}
@@ -142,7 +151,7 @@ export default function DashboardPage() {
 
         <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
           <p className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold">
-            {language === 'bn' ? 'সক্রিয় / পর্যালোচনাধীন' : 'Active / Review'}
+            {language === 'bn' ? 'সক্রিয় ও পর্যালোচনায়' : 'Active / Under Review'}
           </p>
           <p className="text-2xl font-black text-emerald-700 dark:text-emerald-400 mt-1">
             {formatNumber(
@@ -154,7 +163,7 @@ export default function DashboardPage() {
 
         <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
           <p className="text-xs text-amber-600 dark:text-amber-400 font-semibold">
-            {language === 'bn' ? 'স্থগিত / বিরোধ সনাক্ত' : 'Held (Conflicts)'}
+            {language === 'bn' ? 'স্থগিত (বিরোধ সনাক্ত)' : 'Held / Conflicts'}
           </p>
           <p className="text-2xl font-black text-amber-700 dark:text-amber-400 mt-1">
             {formatNumber(countByStatus('held'), language)}
@@ -172,23 +181,23 @@ export default function DashboardPage() {
       </div>
 
       {/* Filter Tabs */}
-      <div className="flex flex-wrap gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
+      <div className="flex flex-wrap gap-1.5 sm:gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
         {[
           { key: 'all', label: language === 'bn' ? 'সকল' : 'All' },
           { key: 'verified', label: language === 'bn' ? 'যাচাইকৃত' : 'Verified' },
           { key: 'under_review', label: language === 'bn' ? 'পর্যালোচনাধীন' : 'Under Review' },
-          { key: 'held', label: language === 'bn' ? 'স্থগিত (Held)' : 'Held' },
+          { key: 'held', label: language === 'bn' ? 'স্থগিত' : 'Held' },
           { key: 'approved', label: language === 'bn' ? 'অনুমোদিত' : 'Approved' },
-          { key: 'finalized', label: language === 'bn' ? 'চূড়ান্ত নিষ্পত্তিকৃত' : 'Finalized' },
-          { key: 'rejected', label: language === 'bn' ? 'বাতিল' : 'Rejected' },
+          { key: 'finalized', label: language === 'bn' ? 'চূড়ান্ত নিষ্পত্তিকৃত' : 'Finalized' },
+          { key: 'rejected', label: language === 'bn' ? 'বাতিলকৃত' : 'Rejected' },
         ].map((tab) => (
           <button
             key={tab.key}
             onClick={() => setStatusFilter(tab.key)}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+            className={`min-h-[44px] px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center ${
               statusFilter === tab.key
-                ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900'
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200'
+                ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-xs'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
             }`}
           >
             {tab.label}
@@ -197,10 +206,11 @@ export default function DashboardPage() {
       </div>
 
       {/* Transfers Table */}
-      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
+      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
         {loading ? (
-          <div className="p-12 text-center text-sm text-slate-500 font-semibold">
-            {language === 'bn' ? 'তথ্য লোড হচ্ছে...' : 'Loading transfers...'}
+          <div className="p-12 text-center text-sm text-slate-500 font-semibold flex items-center justify-center gap-2">
+            <span className="animate-spin">⏳</span>
+            <span>{language === 'bn' ? 'তথ্য লোড হচ্ছে...' : 'Loading transfers...'}</span>
           </div>
         ) : filteredTransfers.length === 0 ? (
           <div className="p-12 text-center space-y-3">
@@ -220,7 +230,7 @@ export default function DashboardPage() {
               <thead className="bg-slate-50 dark:bg-slate-950 text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800 uppercase font-semibold">
                 <tr>
                   <th className="px-4 py-3">{language === 'bn' ? 'আইডি' : 'Transfer ID'}</th>
-                  <th className="px-4 py-3">{language === 'bn' ? 'প্লট / মৌজা' : 'Parcel'}</th>
+                  <th className="px-4 py-3">{language === 'bn' ? 'প্লট / মৌজা' : 'Parcel / Mouza'}</th>
                   <th className="px-4 py-3">{language === 'bn' ? 'ক্রেতা / বিক্রেতা' : 'Buyer / Seller'}</th>
                   <th className="px-4 py-3">{language === 'bn' ? 'স্ট্যাটাস' : 'Status'}</th>
                   <th className="px-4 py-3">{language === 'bn' ? 'অসঙ্গতি ফলাফল' : 'Rule Findings'}</th>
@@ -236,7 +246,7 @@ export default function DashboardPage() {
                       key={tr.id}
                       className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition"
                     >
-                      <td className="px-4 py-3 font-mono font-bold text-emerald-700 dark:text-emerald-400">
+                      <td className="px-4 py-3 font-mono font-bold text-emerald-700 dark:text-emerald-400 whitespace-nowrap">
                         <Link href={`/transfers/${tr.id}`} className="hover:underline">
                           {tr.id}
                         </Link>
@@ -245,7 +255,7 @@ export default function DashboardPage() {
                         <span className="font-bold text-slate-900 dark:text-white">
                           {tr.parcel_id}
                         </span>
-                        <div className="text-[11px] text-slate-500">
+                        <div className="text-[11px] text-slate-500 truncate max-w-[140px]">
                           {tr.application_mouza}
                         </div>
                       </td>
@@ -257,49 +267,56 @@ export default function DashboardPage() {
                           {language === 'bn' ? 'হতে:' : 'from:'} {localName(tr.seller_name, language)}
                         </div>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 whitespace-nowrap">
                         <StatusBadge status={tr.status} size="sm" />
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 whitespace-nowrap">
                         {findingsCount > 0 ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 font-bold text-[11px]">
-                            ⚠️ {formatNumber(findingsCount, language)} {language === 'bn' ? 'টি অসঙ্গতি' : 'finding(s)'}
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-100 dark:bg-rose-950 text-rose-800 dark:text-rose-300 font-bold text-[11px] border border-rose-300 dark:border-rose-800">
+                            <span>⚠️</span>
+                            <span>
+                              {formatNumber(findingsCount, language)} {language === 'bn' ? 'টি অসঙ্গতি' : 'finding(s)'}
+                            </span>
                           </span>
                         ) : (
-                          <span className="text-emerald-600 dark:text-emerald-400 font-bold text-[11px]">
-                            {language === 'bn' ? 'সঠিক ✓' : 'Clean ✓'}
+                          <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold text-[11px]">
+                            <span>✓</span>
+                            <span>{language === 'bn' ? 'সঠিক' : 'Clean'}</span>
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3 text-slate-500 font-mono text-[11px]">
+                      <td className="px-4 py-3 text-slate-500 font-mono text-[11px] whitespace-nowrap">
                         {formatDate(tr.created_at, language)}
                       </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="px-4 py-3 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1.5">
                           {/* Quick review action for reviewer */}
                           {isReviewer && tr.status === 'verified' && (
                             <button
                               onClick={() => handleQuickTransition(tr.id, 'under_review')}
                               disabled={actionInProgress === tr.id}
-                              className="px-2 py-1 rounded-lg bg-emerald-600 text-white font-bold text-[10px] hover:bg-emerald-700 transition"
+                              className="min-h-[36px] px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white font-bold text-[11px] hover:bg-emerald-700 transition inline-flex items-center gap-1"
                             >
-                              {language === 'bn' ? 'পর্যালোচনা' : 'Review'}
+                              <span>🔍</span>
+                              <span>{language === 'bn' ? 'পর্যালোচনা' : 'Review'}</span>
                             </button>
                           )}
                           {isReviewer && tr.status === 'under_review' && (
                             <button
                               onClick={() => handleQuickTransition(tr.id, 'approved')}
                               disabled={actionInProgress === tr.id}
-                              className="px-2 py-1 rounded-lg bg-blue-600 text-white font-bold text-[10px] hover:bg-blue-700 transition"
+                              className="min-h-[36px] px-2.5 py-1.5 rounded-lg bg-blue-600 text-white font-bold text-[11px] hover:bg-blue-700 transition inline-flex items-center gap-1"
                             >
-                              {language === 'bn' ? 'অনুমোদন' : 'Approve'}
+                              <span>✓</span>
+                              <span>{language === 'bn' ? 'অনুমোদন' : 'Approve'}</span>
                             </button>
                           )}
                           <Link
                             href={`/transfers/${tr.id}`}
-                            className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 font-bold text-slate-700 dark:text-slate-300 transition"
+                            className="min-h-[36px] px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 font-bold text-slate-700 dark:text-slate-300 transition inline-flex items-center gap-1 text-[11px]"
                           >
-                            {language === 'bn' ? 'বিস্তারিত →' : 'Details →'}
+                            <span>📋</span>
+                            <span>{language === 'bn' ? 'বিস্তারিত →' : 'Details →'}</span>
                           </Link>
                         </div>
                       </td>
