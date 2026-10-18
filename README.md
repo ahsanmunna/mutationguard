@@ -258,7 +258,6 @@ The following table should reflect the tools the team actually used during devel
 | Claude (Anthropic) | Architecture and code review, security review, debugging, testing assistance, and README drafting, as applicable to the team's actual workflow |
 | ChatGPT (OpenAI) | Project planning, explanations, writing assistance, and UI or implementation suggestions, as applicable |
 | Antigravity (Google) | AI-assisted application scaffolding and development, as applicable |
-| Logo-generation tool or designer | **Confirm and credit the actual source of the logo artwork** |
 
 AI-assisted output was reviewed and tested by the team. The team is responsible for understanding and presenting the submitted implementation.
 
