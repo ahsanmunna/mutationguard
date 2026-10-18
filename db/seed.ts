@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs';
+import { randomBytes } from 'crypto';
 import { getPool, closePool } from './index';
 import { verifyDatabaseSafety, sanitizeErrorMessage } from './safety';
 import { generateEd25519KeyPair } from '../src/lib/crypto/signature';
@@ -37,7 +38,10 @@ export async function runSeed(customPool?: any) {
     await client.query('DELETE FROM parcels;');
     await client.query('DELETE FROM users;');
 
-    const defaultPasswordHash = bcrypt.hashSync('demo123', 8);
+    // Password for the seeded DEMO users (synthetic accounts). Set DEMO_PASSWORD in .env.local
+    // to change it. The 'system' user gets a random password nobody knows: it can never log in.
+    const defaultPasswordHash = bcrypt.hashSync(process.env.DEMO_PASSWORD || 'demo123', 8);
+    const systemPasswordHash  = bcrypt.hashSync(randomBytes(24).toString('hex'), 8);
 
     // -----------------------------------------------------------------------
     // Generate an Ed25519 keypair per user (Phase 2 requirement).
@@ -93,7 +97,7 @@ export async function runSeed(customPool?: any) {
       await client.query(
         `INSERT INTO users (username, full_name, role, password_hash, nid, public_key, private_key)
          VALUES ($1, $2, $3, $4, $5, $6, $7);`,
-        [username, fullName, role, defaultPasswordHash, nid, kp.publicKey, kp.privateKey]
+        [username, fullName, role, role === 'system' ? systemPasswordHash : defaultPasswordHash, nid, kp.publicKey, kp.privateKey]
       );
     }
 

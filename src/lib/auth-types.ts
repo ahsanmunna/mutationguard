@@ -7,8 +7,6 @@ export interface UserSession {
   nid?: string;
 }
 
-export const DEMO_COOKIE_NAME = 'mg_demo_user';
-
 /**
  * Canonical fake NID map used across seed, tests, and demo presets.
  * All IDs are obviously fictional — format NID-DEMO-XXXX.
@@ -29,9 +27,9 @@ export const DEMO_NIDS: Record<string, string> = {
 };
 
 /**
- * STAGE A — TEMPORARY STUB:
- * Hardcoded user list for demo. Phase 4 replaces this with DB-loaded users.
- * Every route still calls requireAuth/requireRole so swapping is safe.
+ * Demo persona list (display names for the one-click demo switcher) and test fixtures.
+ * It does NOT grant access to anything: real identity always comes from the signed
+ * session cookie plus the users table (see src/lib/auth.ts).
  */
 export const SEEDED_USERS: Record<string, UserSession> = {
   officer_farhan: {

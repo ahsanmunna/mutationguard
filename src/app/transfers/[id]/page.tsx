@@ -7,7 +7,7 @@ import StatusBadge from '@/components/StatusBadge';
 import ConflictAlert from '@/components/ConflictAlert';
 import { useLanguage } from '@/components/LanguageContext';
 import { localName, formatNumber, formatDate, formatCount } from '@/lib/i18n/translations';
-import { DEMO_COOKIE_NAME, SEEDED_USERS } from '@/lib/auth-types';
+import { useCurrentUser } from '@/lib/use-current-user';
 
 export default function TransferDetailPage() {
   const params = useParams();
@@ -19,20 +19,12 @@ export default function TransferDetailPage() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [currentUsername, setCurrentUsername] = useState<string>('officer_farhan');
 
-  useEffect(() => {
-    const match = document.cookie.match(new RegExp(`(?:^|; )${DEMO_COOKIE_NAME}=([^;]*)`));
-    if (match && match[1]) {
-      setCurrentUsername(decodeURIComponent(match[1]));
-    }
-  }, []);
 
-  const currentUser = SEEDED_USERS[currentUsername] || {
-    username: currentUsername,
-    fullName: currentUsername,
-    role: 'reviewer',
-  };
+  // Who is logged in comes from the server (signed httpOnly session), not from the browser.
+  const { user: sessionUser } = useCurrentUser();
+  const currentUsername = sessionUser?.username ?? '';
+  const currentUser = sessionUser ?? { username: '', fullName: '', role: 'applicant' as const };
   const isReviewer = currentUser.role === 'reviewer';
 
   const fetchTransfer = async () => {

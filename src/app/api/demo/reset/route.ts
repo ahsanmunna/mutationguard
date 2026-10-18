@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { runSeed } from '@/../db/seed';
 import { requireRole } from '@/lib/auth';
 import { handleApiError } from '@/lib/api-errors';
+// Re-seeding talks to the hosted database several times, so allow more than the default time.
+export const maxDuration = 30;
 
 export async function POST(req: NextRequest) {
   if (process.env.DEMO_MODE !== 'true') {

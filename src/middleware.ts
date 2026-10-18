@@ -1,40 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { DEMO_COOKIE_NAME } from './lib/auth-types';
+import { SESSION_COOKIE_NAME, verifySessionToken } from './lib/session';
+import { getSessionSecret } from './lib/env';
 
 /**
- * MutationGuard Access Control Middleware (Stage A Auth Stub)
+ * MutationGuard access control (runs before every page and API request).
  *
- * Public routes:
- *   - / (Home)
- *   - /login
- *   - /verify/* (Public verification page)
- *   - /api/public/*
- *   - /api/auth/*
- *   - /_next/*, /favicon.ico, static assets
+ * Public:     /, /login, /verify/*, /api/public/*, /api/auth/*, static assets
+ * Protected:  everything else. The session cookie must carry a valid SIGNATURE and not be
+ *             expired (a forged or edited cookie is rejected right here).
+ * Reviewer-only PAGES (/demo, /integrity): other roles are redirected to the dashboard.
  *
- * Protected routes:
- *   - /dashboard
- *   - /transfers/*
- *   - /integrity
- *   - /demo
- *   - /api/transfers/*
- *   - /api/audit/*
- *   - /api/parcels/*
- *   - /api/deeds/*
+ * Fine-grained authorization (roles, ownership) is enforced again in each API route
+ * handler from the DATABASE role, so hiding pages here is only a convenience.
  */
-export function middleware(req: NextRequest) {
+export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // 1. Allow static Next.js assets and favicon
-  if (
-    pathname.startsWith('/_next') ||
-    pathname.startsWith('/static') ||
-    pathname === '/favicon.ico'
-  ) {
+  if (pathname.startsWith('/_next') || pathname.startsWith('/static') || pathname === '/favicon.ico') {
     return NextResponse.next();
   }
 
-  // 2. Allow public routes
   if (
     pathname === '/' ||
     pathname === '/login' ||
@@ -45,22 +30,34 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // 3. Check for demo session cookie
-  const authCookie = req.cookies.get(DEMO_COOKIE_NAME);
+  const isApi = pathname.startsWith('/api/');
+  const token = req.cookies.get(SESSION_COOKIE_NAME)?.value;
 
-  if (!authCookie || !authCookie.value) {
-    // If API route: return 401 Unauthorized
-    if (pathname.startsWith('/api/')) {
-      return NextResponse.json(
-        { error: 'UNAUTHORIZED: Please log in with a demo account' },
-        { status: 401 }
-      );
+  let payload = null;
+  if (token) {
+    let secret: string;
+    try {
+      secret = getSessionSecret();
+    } catch {
+      // Misconfigured server: fail closed, do not leak details.
+      return isApi
+        ? NextResponse.json({ error: 'Server configuration error' }, { status: 500 })
+        : new NextResponse('Server configuration error', { status: 500 });
     }
+    payload = await verifySessionToken(token, secret);
+  }
 
-    // If browser page: redirect to /login
+  if (!payload) {
+    if (isApi) {
+      return NextResponse.json({ error: 'Authentication required', code: 'UNAUTHORIZED' }, { status: 401 });
+    }
     const loginUrl = new URL('/login', req.url);
     loginUrl.searchParams.set('redirect', pathname);
     return NextResponse.redirect(loginUrl);
+  }
+
+  if ((pathname.startsWith('/demo') || pathname.startsWith('/integrity')) && payload.r !== 'reviewer') {
+    return NextResponse.redirect(new URL('/dashboard', req.url));
   }
 
   return NextResponse.next();

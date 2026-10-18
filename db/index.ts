@@ -41,10 +41,12 @@ export function getPool(): Pool {
   if (!pool) {
     const connectionString = getDatabaseUrl();
 
+  // Serverless hosting (Vercel) starts many small instances, so keep each pool small.
+    const isProduction = process.env.NODE_ENV === 'production';
     pool = new Pool({
       connectionString,
-      max: 10,
-      idleTimeoutMillis: 30000,
+      max: isProduction ? 3 : 10,
+      idleTimeoutMillis: isProduction ? 10000 : 30000,
       connectionTimeoutMillis: 5000,
     });
 

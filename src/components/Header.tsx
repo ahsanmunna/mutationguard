@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useLanguage } from './LanguageContext';
 import { useTheme } from './ThemeContext';
-import { SEEDED_USERS, DEMO_COOKIE_NAME } from '@/lib/auth-types';
+import { SEEDED_USERS } from '@/lib/auth-types';
+import { useCurrentUser } from '@/lib/use-current-user';
 import { localName } from '@/lib/i18n/translations';
 
 export default function Header() {
@@ -13,21 +14,13 @@ export default function Header() {
   const { theme, toggleTheme } = useTheme();
   const pathname = usePathname();
 
-  const [currentUsername, setCurrentUsername] = useState<string | null>(null);
-
-  useEffect(() => {
-    const match = document.cookie.match(new RegExp(`(?:^|; )${DEMO_COOKIE_NAME}=([^;]*)`));
-    if (match && match[1]) {
-      setCurrentUsername(decodeURIComponent(match[1]));
-    } else {
-      setCurrentUsername(null);
-    }
-  }, [pathname]);
+  // Who is logged in comes from the server (signed httpOnly session cookie).
+  const { user: sessionUser, demoMode } = useCurrentUser(pathname);
+  const currentUsername = sessionUser?.username ?? null;
 
   const handleUserChange = async (username: string) => {
     if (username === '__logout__') {
       await fetch('/api/auth/logout', { method: 'POST' });
-      setCurrentUsername(null);
       window.location.href = '/login';
       return;
     }
@@ -37,7 +30,6 @@ export default function Header() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username }),
     });
-    setCurrentUsername(username);
     window.location.reload();
   };
 
@@ -49,7 +41,14 @@ export default function Header() {
     { href: '/demo', label: t('nav_demo'), icon: '🎮' },
   ];
 
-  const currentUserObj = currentUsername ? SEEDED_USERS[currentUsername] : null;
+  const currentUserObj = sessionUser;
+
+  // The one-click persona switcher only exists in demo mode (and never lists the system user).
+  // Outside demo mode the menu shows just the current user and "Sign Out".
+  const switcherUsers = demoMode ? Object.values(SEEDED_USERS).filter((u) => u.role !== 'system') : [];
+  if (currentUserObj && !switcherUsers.some((u) => u.username === currentUserObj.username)) {
+    switcherUsers.unshift(currentUserObj);
+  }
 
   return (
     <header className="border-b border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur sticky top-0 z-50 transition-colors">
@@ -107,7 +106,7 @@ export default function Header() {
                   className="bg-white dark:bg-slate-900 text-slate-900 dark:text-white rounded-lg px-2 py-1.5 font-semibold border border-slate-300 dark:border-slate-600 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer text-xs max-w-[125px] sm:max-w-[200px] truncate min-h-[36px]"
                   aria-label={t('role_label')}
                 >
-                  {Object.values(SEEDED_USERS).map((user) => (
+                  {switcherUsers.map((user) => (
                     <option key={user.username} value={user.username}>
                       {language === 'bn' ? localName(user.fullName, 'bn') : user.fullName} (
                       {user.role === 'reviewer'

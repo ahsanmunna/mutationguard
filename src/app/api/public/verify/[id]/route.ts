@@ -103,7 +103,9 @@ export async function GET(
     const isDeedAnchored = chain.valid && deedCheck.failure === null && deedCheck.deeds_checked === 1;
 
     // 5. Generate QR code pointing to public verification page
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+        // Use the configured public URL if there is one, otherwise the address this request came to
+    // (so QR codes on the hosted site point at the hosted site, not at localhost).
+    const appUrl = (process.env.NEXT_PUBLIC_APP_URL || new URL(req.url).origin).replace(/\/+$/, '');
     const verifyUrl = `${appUrl}/verify/${id}`;
     let qrCodeDataUrl = '';
     try {

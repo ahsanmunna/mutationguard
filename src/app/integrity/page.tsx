@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useLanguage } from '@/components/LanguageContext';
-import { DEMO_COOKIE_NAME, SEEDED_USERS } from '@/lib/auth-types';
+import { useCurrentUser } from '@/lib/use-current-user';
 import { localName, formatCount } from '@/lib/i18n/translations';
 
 export default function IntegrityPage() {
@@ -14,19 +14,12 @@ export default function IntegrityPage() {
   const [loading, setLoading] = useState(false);
   const [tampering, setTampering] = useState(false);
   const [tamperMessage, setTamperMessage] = useState<string | null>(null);
-  const [currentUsername, setCurrentUsername] = useState<string>('officer_farhan');
 
-  useEffect(() => {
-    const match = document.cookie.match(new RegExp(`(?:^|; )${DEMO_COOKIE_NAME}=([^;]*)`));
-    if (match && match[1]) {
-      setCurrentUsername(decodeURIComponent(match[1]));
-    }
-  }, []);
 
-  const currentUser = SEEDED_USERS[currentUsername] || {
-    username: currentUsername,
-    role: 'applicant',
-  };
+  // Who is logged in comes from the server (signed httpOnly session), not from the browser.
+  const { user: sessionUser } = useCurrentUser();
+  const currentUsername = sessionUser?.username ?? '';
+  const currentUser = sessionUser ?? { username: '', fullName: '', role: 'applicant' as const };
   const isReviewer = currentUser.role === 'reviewer';
 
   // One-line explanation of the FIRST failure, for a chain block or for a deed.

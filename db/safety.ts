@@ -13,11 +13,17 @@ export const ALLOWED_DATABASES = {
 export const WRITE_CONFIRMATION_ENV_VAR = 'MUTATIONGUARD_ALLOW_DB_WRITE';
 
 /**
- * Returns the expected database name based on the specified mode or NODE_ENV.
+ * Returns the ONE database name this process is allowed to write to.
+ *  - test mode:  always 'antigravity_test'
+ *  - otherwise:  the name in ALLOWED_DATABASE_NAME if it is set (used for the hosted Neon
+ *                database, for example "neondb"), else 'antigravity_dev'.
+ * verifyDatabaseSafety() still refuses any database whose name does not match exactly.
  */
 export function getExpectedDatabaseName(mode?: DatabaseMode): string {
   const isTest = mode ? mode === 'test' : process.env.NODE_ENV === 'test';
-  return isTest ? ALLOWED_DATABASES.test : ALLOWED_DATABASES.development;
+  if (isTest) return ALLOWED_DATABASES.test;
+  const configured = process.env.ALLOWED_DATABASE_NAME?.trim();
+  return configured ? configured : ALLOWED_DATABASES.development;
 }
 
 /**
