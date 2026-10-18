@@ -2,25 +2,34 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Page colours. Light = warm drafting paper, dark = warm charcoal (not blue-black). */
 :root {
-  --foreground-rgb: 15, 23, 42;
-  --background-start-rgb: 248, 250, 252;
-  --background-end-rgb: 255, 255, 255;
+  --foreground-rgb: 40, 45, 42;     /* charcoal  #282D2A */
+  --background-rgb: 245, 242, 233;  /* paper     #F5F2E9 */
 }
 
 .dark {
-  --foreground-rgb: 241, 245, 249;
-  --background-start-rgb: 15, 23, 42;
-  --background-end-rgb: 2, 6, 23;
+  --foreground-rgb: 236, 233, 224;
+  --background-rgb: 27, 31, 28;     /* #1B1F1C */
 }
 
 body {
   color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
+  background: rgb(var(--background-rgb));
   min-height: 100vh;
+  /* Bangla letters need a little more line height than Latin text to stay readable. */
+  line-height: 1.6;
+}
+
+/* One clear keyboard focus style everywhere (survey amber). */
+:focus-visible {
+  outline: 2px solid #d4a34f;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
