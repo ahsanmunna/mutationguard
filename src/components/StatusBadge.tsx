@@ -1,6 +1,15 @@
 'use client';
 
 import React from 'react';
+import {
+  Clock,
+  CircleCheck,
+  Search,
+  BadgeCheck,
+  FileCheck2,
+  CirclePause,
+  CircleX,
+} from 'lucide-react';
 import { useLanguage } from './LanguageContext';
 import { TransferStatus } from '@/lib/workflow/machine';
 
@@ -9,6 +18,10 @@ interface StatusBadgeProps {
   size?: 'sm' | 'md' | 'lg';
 }
 
+/**
+ * Compact rectangular status badge pairing an explicit Lucide icon with descriptive text.
+ * Never communicates state via color alone.
+ */
 export default function StatusBadge({ status, size = 'md' }: StatusBadgeProps) {
   const { t } = useLanguage();
 
@@ -16,68 +29,80 @@ export default function StatusBadge({ status, size = 'md' }: StatusBadgeProps) {
     switch (s) {
       case 'submitted':
         return {
-          bg: 'bg-blue-50 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+          classes:
+            'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700',
           label: t('status_submitted'),
-          icon: '📝',
+          Icon: Clock,
         };
       case 'verified':
         return {
-          bg: 'bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800',
+          classes:
+            'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800',
           label: t('status_verified'),
-          icon: '✅',
+          Icon: CircleCheck,
         };
       case 'under_review':
         return {
-          bg: 'bg-purple-50 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800',
+          classes:
+            'bg-blue-50 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 border-blue-300 dark:border-blue-800',
           label: t('status_under_review'),
-          icon: '🔍',
+          Icon: Search,
         };
       case 'approved':
         return {
-          bg: 'bg-teal-50 dark:bg-teal-950/70 text-teal-700 dark:text-teal-300 border-teal-300 dark:border-teal-800',
+          classes:
+            'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800',
           label: t('status_approved'),
-          icon: '👍',
+          Icon: BadgeCheck,
         };
       case 'finalized':
         return {
-          bg: 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-100 border-green-500 font-bold shadow-sm',
+          classes:
+            'bg-emerald-600 text-white border-emerald-600 font-semibold shadow-xs',
           label: t('status_finalized'),
-          icon: '🏛️',
+          Icon: FileCheck2,
         };
       case 'held':
         return {
-          bg: 'bg-amber-100 dark:bg-amber-950 text-amber-900 dark:text-amber-200 border-amber-400 font-bold shadow-sm',
+          classes:
+            'bg-rose-50 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-800 font-medium',
           label: t('status_held'),
-          icon: '⏸️',
+          Icon: CirclePause,
         };
       case 'rejected':
         return {
-          bg: 'bg-rose-50 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800 font-semibold',
+          classes:
+            'bg-transparent text-rose-700 dark:text-rose-400 border-rose-400 dark:border-rose-700 font-medium',
           label: t('status_rejected'),
-          icon: '❌',
+          Icon: CircleX,
         };
       default:
         return {
-          bg: 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300',
+          classes:
+            'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700',
           label: s,
-          icon: '•',
+          Icon: Clock,
         };
     }
   };
 
   const config = getStatusConfig(status);
+  const IconComponent = config.Icon;
+
   const sizeClasses =
     size === 'sm'
       ? 'px-2 py-0.5 text-xs'
       : size === 'lg'
-      ? 'px-3.5 py-1.5 text-sm font-semibold'
+      ? 'px-3 py-1.5 text-xs sm:text-sm font-semibold'
       : 'px-2.5 py-1 text-xs font-medium';
+
+  const iconSize = size === 'sm' ? 'w-3 h-3' : size === 'lg' ? 'w-4 h-4' : 'w-3.5 h-3.5';
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border ${config.bg} ${sizeClasses}`}
+      className={`inline-flex items-center gap-1.5 rounded border ${config.classes} ${sizeClasses}`}
     >
-      <span>{config.icon}</span>
+      <IconComponent className={`${iconSize} shrink-0`} strokeWidth={1.75} aria-hidden="true" />
       <span>{config.label}</span>
     </span>
   );
