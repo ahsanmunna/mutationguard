@@ -234,8 +234,9 @@ export default function TransferDetailPage() {
                 {language === 'bn' ? 'সহকারী কমিশনার (ভূমি) অ্যাকশন প্যানেল' : 'Officer Review & Workflow Actions'}
               </span>
             </div>
-            <span className="text-xs text-emerald-400 font-mono font-bold">
-              {language === 'bn' ? 'বর্তমান ধাপ:' : 'Stage:'} {transfer.status}
+            <span className="inline-flex items-center gap-2 text-xs text-slate-300">
+              <span>{language === 'bn' ? 'বর্তমান ধাপ:' : 'Stage:'}</span>
+              <StatusBadge status={transfer.status} size="sm" />
             </span>
           </div>
 
