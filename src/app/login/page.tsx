@@ -2,8 +2,10 @@
 
 import React, { useEffect, useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { Loader2, TriangleAlert } from 'lucide-react';
+import Logo from '@/components/Logo';
+import { Button, Field } from '@/components/ui';
 import { useLanguage } from '@/components/LanguageContext';
-import { localName } from '@/lib/i18n/translations';
 import { useCurrentUser } from '@/lib/use-current-user';
 
 /** Only allow redirects to pages on THIS site (blocks "?redirect=https://evil.example"). */
@@ -30,6 +32,7 @@ function LoginForm() {
     if (sessionUser) window.location.href = redirectPath;
   }, [sessionUser, redirectPath]);
 
+  // Demo accounts — all data is fictional/synthetic.
   const demoAccounts = [
     {
       username: 'officer_farhan',
@@ -39,9 +42,7 @@ function LoginForm() {
       roleBadgeBn: 'কর্মকর্তা',
       roleBadgeEn: 'Reviewer',
       descEn: 'Reviews applications, examines rule conflicts, approves or rejects transfers, and finalizes mutations.',
-      descBn: 'আবেদন পর্যালোচনা, বিরোধ ও নিয়ম নিরীক্ষা, অনুমোদন/বাতিল এবং নামজারি চূড়ান্ত নিষ্পত্তি করেন।',
-      icon: '🏛️',
-      color: 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20 hover:border-emerald-600',
+      descBn: 'আবেদন পর্যালোচনা, বিরোধ ও নিয়ম নিরীক্ষা, অনুমোদন/বাতিল এবং নামজারি চূড়ান্ত নিষ্পত্তি করেন।',
     },
     {
       username: 'rahim_uddin',
@@ -52,8 +53,6 @@ function LoginForm() {
       roleBadgeEn: 'Land Owner',
       descEn: 'Registered owner of parcel P-001 (5.00 decimal in Dhanmondi-102).',
       descBn: 'ধানমন্ডি-১০২ মৌজার দাগ নং ১০০০১ এর ৫.০০ শতক জমির বৈধ নিবন্ধিত মালিক।',
-      icon: '📜',
-      color: 'border-blue-500 bg-blue-50/50 dark:bg-blue-950/20 hover:border-blue-600',
     },
     {
       username: 'karim_chowdhury',
@@ -64,20 +63,16 @@ function LoginForm() {
       roleBadgeEn: 'Buyer 1',
       descEn: 'Legitimate buyer for P-001 under valid Deed DEED-2026-001.',
       descBn: 'দলিল DEED-2026-001 এর মাধ্যমে ৫.০০ শতক জমির প্রথম বৈধ ক্রেতা।',
-      icon: '🟢',
-      color: 'border-teal-500 bg-teal-50/50 dark:bg-teal-950/20 hover:border-teal-600',
     },
     {
       username: 'hasan_mahmud',
       nameEn: 'Hasan Mahmud',
       nameBn: 'হাসান মাহমুদ',
       role: 'applicant',
-      roleBadgeBn: 'দ্বিতীয় ক্রেতা',
+      roleBadgeBn: 'দ্বিতীয় ক্রেতা',
       roleBadgeEn: 'Buyer 2',
       descEn: 'Second buyer for P-001 under conflicting Deed DEED-2026-002 (triggers DOUBLE_SALE rule).',
-      descBn: 'একই জমির দ্বিতীয় ক্রেতা (যা দাখিল করলে দ্বৈত হস্তান্তর সনাক্তকরণ নিয়ম সক্রিয় হয়)।',
-      icon: '🔴',
-      color: 'border-rose-500 bg-rose-50/50 dark:bg-rose-950/20 hover:border-rose-600',
+      descBn: 'একই জমির দ্বিতীয় ক্রেতা (যা দাখিল করলে দ্বৈত হস্তান্তর সনাক্তকরণ নিয়ম সক্রিয় হয়)।',
     },
   ];
 
@@ -130,140 +125,154 @@ function LoginForm() {
     }
   };
 
+  const anyBusy = submitting || loggingIn !== null;
+
   return (
-    <div className="max-w-4xl mx-auto space-y-6 sm:space-y-8 py-4 sm:py-8 px-1">
-      <div className="text-center space-y-2">
-        <h1 className="text-2xl sm:text-4xl font-extrabold text-slate-900 dark:text-white">
-          {bn ? 'লগইন করুন' : 'Sign In'}
-        </h1>
-        <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-          {bn ? 'আপনার ব্যবহারকারীর নাম ও পাসওয়ার্ড দিন।' : 'Enter your username and password.'}
-        </p>
-      </div>
+    <div className="min-h-[calc(100vh-8rem)] flex items-start justify-center px-4 pt-12 pb-16">
+      <div className="w-full max-w-sm space-y-6">
 
-      {error && (
-        <div
-          role="alert"
-          className="max-w-md mx-auto p-4 rounded-2xl bg-rose-50 dark:bg-rose-950 border border-rose-300 text-rose-800 dark:text-rose-200 text-sm font-semibold flex items-center gap-2"
-        >
-          <span aria-hidden="true">⚠️</span>
-          <span>{error}</span>
-        </div>
-      )}
-
-      <form
-        onSubmit={handlePasswordLogin}
-        className="max-w-md mx-auto p-5 sm:p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4"
-      >
-        <label className="block space-y-1.5">
-          <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-            {bn ? 'ব্যবহারকারীর নাম' : 'Username'}
-          </span>
-          <input
-            type="text"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            autoComplete="username"
-            required
-            maxLength={100}
-            className="w-full min-h-[44px] px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-sm font-mono"
-          />
-        </label>
-        <label className="block space-y-1.5">
-          <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
-            {bn ? 'পাসওয়ার্ড' : 'Password'}
-          </span>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
-            required
-            maxLength={200}
-            className="w-full min-h-[44px] px-3 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-sm"
-          />
-        </label>
-        <button
-          type="submit"
-          disabled={submitting || loggingIn !== null}
-          className="w-full min-h-[48px] rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold transition disabled:opacity-50 inline-flex items-center justify-center gap-2"
-        >
-          {submitting ? (
-            <>
-              <span className="animate-spin" aria-hidden="true">⏳</span>
-              <span>{bn ? 'প্রবেশ করা হচ্ছে...' : 'Signing in...'}</span>
-            </>
-          ) : (
-            <span>{bn ? 'প্রবেশ করুন' : 'Sign In'}</span>
-          )}
-        </button>
-      </form>
-
-      {demoMode && (
-        <section className="space-y-4" aria-label={bn ? 'ডেমো অ্যাকাউন্ট' : 'Demo accounts'}>
-          <div className="text-center space-y-1">
-            <h2 className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-white">
-              {bn ? 'ডেমো অ্যাকাউন্ট (এক ক্লিকে প্রবেশ)' : 'Demo accounts (one-click sign in)'}
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              {bn
-                ? 'এগুলো কাল্পনিক ডেমো অ্যাকাউন্ট; সব তথ্য কাল্পনিক।'
-                : 'These are fictional demo accounts; all data is synthetic.'}
+        {/* Brand + page title */}
+        <div className="text-center space-y-3">
+          <div className="flex justify-center">
+            <Logo size={40} showName={false} />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+              {bn ? 'লগইন করুন' : 'Sign In'}
+            </h1>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+              {bn ? 'আপনার ব্যবহারকারীর নাম ও পাসওয়ার্ড দিন।' : 'Enter your username and password to continue.'}
             </p>
           </div>
+        </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {demoAccounts.map((account) => (
-              <div
-                key={account.username}
-                className={`p-6 rounded-3xl border-2 transition shadow-sm hover:shadow-md flex flex-col justify-between ${account.color}`}
-              >
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-3xl" aria-hidden="true">{account.icon}</span>
-                    <span className="text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-full bg-white dark:bg-slate-900 shadow-sm">
-                      {bn ? account.roleBadgeBn : account.roleBadgeEn}
-                    </span>
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                      {bn ? account.nameBn : account.nameEn}
-                    </h3>
-                    <p className="text-xs text-slate-500 font-mono">@{account.username}</p>
-                  </div>
-                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                    {bn ? account.descBn : account.descEn}
-                  </p>
-                </div>
-
-                <button
-                  onClick={() => handleDemoLogin(account.username)}
-                  disabled={submitting || loggingIn !== null}
-                  className="mt-6 min-h-[44px] w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-200 text-white dark:text-slate-900 text-sm font-bold transition disabled:opacity-50 inline-flex items-center justify-center gap-2"
-                >
-                  {loggingIn === account.username ? (
-                    <>
-                      <span className="animate-spin" aria-hidden="true">⏳</span>
-                      <span>{bn ? 'প্রবেশ করা হচ্ছে...' : 'Signing in...'}</span>
-                    </>
-                  ) : (
-                    <span>
-                      {bn
-                        ? `${localName(account.nameEn, 'bn')} হিসেবে প্রবেশ করুন`
-                        : `Login as ${account.nameEn}`}
-                    </span>
-                  )}
-                </button>
-              </div>
-            ))}
+        {/* Error alert */}
+        {error && (
+          <div
+            role="alert"
+            className="flex items-start gap-2.5 p-3 rounded-md bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300 text-sm"
+          >
+            <TriangleAlert className="w-4 h-4 shrink-0 mt-0.5" strokeWidth={1.75} aria-hidden="true" />
+            <span>{error}</span>
           </div>
-        </section>
-      )}
+        )}
 
-      <div className="p-4 rounded-2xl bg-slate-100 dark:bg-slate-900/50 text-center text-xs text-slate-500 border border-slate-200 dark:border-slate-800">
-        {bn
-          ? 'পাসওয়ার্ড bcrypt দিয়ে যাচাই করা হয় এবং সেশন কুকি স্বাক্ষরিত ও HttpOnly।'
-          : 'Passwords are checked with bcrypt, and sessions use a signed, HttpOnly cookie.'}
+        {/* Password login form */}
+        <form
+          onSubmit={handlePasswordLogin}
+          className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-5 space-y-4"
+        >
+          <Field
+            label={bn ? 'ব্যবহারকারীর নাম' : 'Username'}
+            htmlFor="username"
+            required
+          >
+            <input
+              id="username"
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              autoComplete="username"
+              required
+              maxLength={100}
+              className="w-full min-h-[44px] px-3 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+            />
+          </Field>
+
+          <Field
+            label={bn ? 'পাসওয়ার্ড' : 'Password'}
+            htmlFor="password"
+            required
+          >
+            <input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
+              required
+              maxLength={200}
+              className="w-full min-h-[44px] px-3 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+            />
+          </Field>
+
+          <Button
+            type="submit"
+            variant="primary"
+            size="md"
+            loading={submitting}
+            disabled={anyBusy}
+            className="w-full"
+          >
+            {submitting
+              ? (bn ? 'প্রবেশ করা হচ্ছে...' : 'Signing in...')
+              : (bn ? 'প্রবেশ করুন' : 'Sign In')}
+          </Button>
+        </form>
+
+        {/* Demo accounts — compact list rows, only in demo mode */}
+        {demoMode && (
+          <section aria-label={bn ? 'ডেমো অ্যাকাউন্ট' : 'Demo accounts'}>
+            {/* Divider with heading */}
+            <div className="relative my-1">
+              <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                <div className="w-full border-t border-slate-200 dark:border-slate-700" />
+              </div>
+              <div className="relative flex justify-center">
+                <span className="bg-white dark:bg-slate-950 px-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                  {bn ? 'ডেমো অ্যাকাউন্ট' : 'Demo accounts'}
+                </span>
+              </div>
+            </div>
+
+            {/* Compact rows */}
+            <ul className="mt-3 divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden bg-white dark:bg-slate-900">
+              {demoAccounts.map((account) => (
+                <li
+                  key={account.username}
+                  className="flex items-center justify-between gap-3 px-4 py-3"
+                >
+                  {/* Name + role + username */}
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">
+                      {bn ? account.nameBn : account.nameEn}
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {bn ? account.roleBadgeBn : account.roleBadgeEn}
+                      {' · '}
+                      <span className="font-mono">@{account.username}</span>
+                    </p>
+                  </div>
+
+                  {/* Enter button */}
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    loading={loggingIn === account.username}
+                    disabled={anyBusy}
+                    onClick={() => handleDemoLogin(account.username)}
+                    className="shrink-0 min-h-[44px]"
+                  >
+                    {loggingIn === account.username
+                      ? (bn ? 'প্রবেশ...' : 'Entering...')
+                      : (bn ? 'প্রবেশ' : 'Enter')}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+
+            <p className="mt-2 text-center text-xs text-slate-400 dark:text-slate-500">
+              {bn ? 'এগুলো কাল্পনিক ডেমো অ্যাকাউন্ট; সব তথ্য কাল্পনিক।' : 'Fictional demo accounts; all data is synthetic.'}
+            </p>
+          </section>
+        )}
+
+        {/* Security note */}
+        <p className="text-center text-xs text-slate-400 dark:text-slate-500">
+          {bn
+            ? 'পাসওয়ার্ড bcrypt দিয়ে যাচাই করা হয় এবং সেশন কুকি স্বাক্ষরিত ও HttpOnly।'
+            : 'Passwords are checked with bcrypt, and sessions use a signed, HttpOnly cookie.'}
+        </p>
       </div>
     </div>
   );
@@ -274,8 +283,8 @@ export default function LoginPage() {
   return (
     <Suspense
       fallback={
-        <div className="py-24 text-center text-sm font-semibold text-slate-500 flex items-center justify-center gap-2">
-          <span className="animate-spin" aria-hidden="true">⏳</span>
+        <div className="py-24 text-center text-sm text-slate-500 flex items-center justify-center gap-2">
+          <Loader2 className="w-4 h-4 animate-spin" strokeWidth={1.75} aria-hidden="true" />
           <span>{language === 'bn' ? 'লগইন পাতা লোড হচ্ছে...' : 'Loading sign-in page...'}</span>
         </div>
       }
