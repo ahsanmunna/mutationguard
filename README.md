@@ -25,8 +25,6 @@ Built for the **LandTech Innovation Hackathon 2026** at Daffodil International U
 
 ## The problem
 
-## The problem
-
 Land is central to Bangladesh's justice system, and land administration is a service where people often meet corruption and conflicting records.
 
 - In July 2026 the Law Minister told Parliament that more than 46 lakh cases are pending in the courts, including about 18 lakh civil cases ([Daily Ittefaq](https://en.ittefaq.com.bd/17265/over-46-lakh-cases-pending-in-country-s-courts), [The Daily Star](https://www.thedailystar.net/news/the-parliament-watch/parliament/news/over-46-lakh-cases-pending-across-courts-bangladesh-law-minister-4218096)).
