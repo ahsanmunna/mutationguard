@@ -2,7 +2,19 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
+import Link from 'next/link';
+import {
+  ShieldCheck,
+  ShieldAlert,
+  Printer,
+  ArrowLeft,
+  QrCode,
+  FileText,
+  Clock,
+  Landmark,
+} from 'lucide-react';
 import StatusBadge from '@/components/StatusBadge';
+import { Button } from '@/components/ui';
 import { useLanguage } from '@/components/LanguageContext';
 import { localName, formatNumber, formatDate, formatCount } from '@/lib/i18n/translations';
 
@@ -10,6 +22,7 @@ export default function PublicVerifyPage() {
   const params = useParams();
   const id = params?.id as string;
   const { language } = useLanguage();
+  const bn = language === 'bn';
 
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -19,11 +32,11 @@ export default function PublicVerifyPage() {
     async function loadData() {
       try {
         setLoading(true);
-        // Uses the dedicated public verification endpoint (no auth required)
+        // Dedicated public verification endpoint (no authentication required)
         const res = await fetch(`/api/public/verify/${id}`);
         const json = await res.json();
         if (!res.ok) {
-          throw new Error(json.error || (language === 'bn' ? 'রেকর্ডটি যাচাই করা যায়নি' : 'Failed to verify record'));
+          throw new Error(json.error || (bn ? 'রেকর্ডটি যাচাই করা যায়নি' : 'Failed to verify record'));
         }
         setData(json);
       } catch (err: any) {
@@ -33,14 +46,14 @@ export default function PublicVerifyPage() {
       }
     }
     if (id) loadData();
-  }, [id, language]);
+  }, [id, bn]);
 
   if (loading) {
     return (
       <div className="py-24 text-center space-y-3">
-        <div className="inline-block w-8 h-8 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
-        <p className="text-sm font-semibold text-slate-500">
-          {language === 'bn' ? `রেকর্ড #${id} যাচাই করা হচ্ছে...` : `Verifying public record #${id}...`}
+        <div className="inline-block w-6 h-6 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+        <p className="text-xs font-semibold text-slate-500">
+          {bn ? `রেকর্ড #${id} যাচাই করা হচ্ছে...` : `Verifying public record #${id}...`}
         </p>
       </div>
     );
@@ -48,249 +61,271 @@ export default function PublicVerifyPage() {
 
   if (error || !data) {
     return (
-      <div className="max-w-lg mx-auto py-16 text-center space-y-4 px-3">
-        <div className="text-4xl">❌</div>
-        <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-          {language === 'bn' ? 'রেকর্ডটি পাওয়া যায়নি' : 'Public Record Not Found'}
+      <div className="max-w-md mx-auto py-16 text-center space-y-4 px-4">
+        <div className="w-10 h-10 rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 mx-auto flex items-center justify-center">
+          <ShieldAlert className="w-5 h-5" strokeWidth={1.75} aria-hidden="true" />
+        </div>
+        <h2 className="text-lg font-bold text-slate-900 dark:text-white">
+          {bn ? 'রেকর্ডটি পাওয়া যায়নি' : 'Record Not Found'}
         </h2>
         <p className="text-xs text-rose-600 dark:text-rose-400 font-mono">
           {error || `ID: ${id}`}
         </p>
+        <div className="pt-2">
+          <Link
+            href="/dashboard"
+            className="text-xs text-emerald-600 font-semibold underline inline-flex items-center gap-1"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" strokeWidth={1.75} aria-hidden="true" />
+            <span>{bn ? 'ড্যাশবোর্ডে ফিরে যান' : 'Return to Dashboard'}</span>
+          </Link>
+        </div>
       </div>
     );
   }
 
-  const { transfer, deed, parcel, ownership_history, integrity, finalization_audit_record, is_deed_anchored, qr_code_data_url } = data;
+  const {
+    transfer,
+    deed,
+    parcel,
+    ownership_history,
+    integrity,
+    finalization_audit_record,
+    qr_code_data_url,
+  } = data;
+
+  const deedHash = deed?.deed_hash || transfer?.deed_hash || '';
+  const truncatedHash =
+    deedHash.length > 32
+      ? `${deedHash.slice(0, 16)}...${deedHash.slice(-16)}`
+      : deedHash || 'N/A';
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6 py-4 px-1">
-      {/* Official Certificate Card */}
-      <div className="p-6 sm:p-10 rounded-3xl bg-white dark:bg-slate-900 border-2 border-emerald-600/40 shadow-xl space-y-6">
-        <div className="text-center space-y-2 border-b border-slate-200 dark:border-slate-800 pb-6">
-          <div className="w-14 h-14 mx-auto rounded-2xl bg-emerald-700 text-white flex items-center justify-center font-bold text-2xl shadow-md">
-            🏛️
+    <div className="max-w-2xl mx-auto py-6 px-4">
+      {/* Single-Column Record Sheet */}
+      <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 sm:p-8 space-y-6">
+
+        {/* Header */}
+        <div className="border-b border-slate-200 dark:border-slate-800 pb-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide block">
+                {bn ? 'ভূমি নামজারি রেকর্ড বিবরণী' : 'Land Mutation Record Sheet'}
+              </span>
+              <h1 className="text-xl sm:text-2xl font-bold font-mono text-slate-900 dark:text-white mt-0.5">
+                {transfer.id}
+              </h1>
+            </div>
+            <StatusBadge status={transfer.status} size="md" />
           </div>
-          <h1 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-            {language === 'bn' ? 'ডিজিটাল ভূমি নামজারি সত্যতা যাচাইকরণ সনদ' : 'Digital Land Mutation Verification Certificate'}
-          </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            {language === 'bn'
-              ? 'গণপ্রজাতন্ত্রী বাংলাদেশ সরকার • মিউটেশনগার্ড ক্রিপ্টোগ্রাফিক লেজার'
-              : "Government of the People's Republic of Bangladesh • MutationGuard Immutable Ledger"}
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+            {bn ? 'রেকর্ড দাখিলের তারিখ:' : 'Recorded Date:'}{' '}
+            <span className="font-medium text-slate-700 dark:text-slate-300">
+              {formatDate(transfer.created_at, language)}
+            </span>
           </p>
         </div>
 
-        {/* QR Code and Primary Status Banner */}
-        <div className="flex flex-col sm:flex-row items-center justify-around gap-6 p-5 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
-          {qr_code_data_url && (
-            <div className="text-center space-y-1">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={qr_code_data_url}
-                alt="Verification QR Code"
-                className="w-36 h-36 rounded-xl border border-slate-300 dark:border-slate-700 shadow-sm mx-auto"
-              />
-              <span className="text-[10px] text-slate-500 font-mono block">
-                {language === 'bn' ? 'অফিসিয়াল কিউআর যাচাই' : 'Official QR Anchor'}
-              </span>
-            </div>
-          )}
-
-          <div className="space-y-3 text-center sm:text-left">
+        {/* 1. Parcel & Current Owner */}
+        <div className="space-y-3">
+          <h2 className="text-xs font-bold uppercase tracking-wide text-slate-500">
+            {bn ? 'জমির পার্সেল ও বর্তমান মালিক' : 'Parcel & Current Legal Owner'}
+          </h2>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3.5 rounded-md bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs">
             <div>
-              <span className="text-xs text-slate-500 block">
-                {language === 'bn' ? 'নামজারি ট্র্যাকিং নম্বর:' : 'Record Reference:'}
-              </span>
-              <span className="font-mono font-black text-xl text-emerald-800 dark:text-emerald-300">
-                {transfer.id}
-              </span>
+              <span className="text-slate-500 block">{bn ? 'পার্সেল আইডি:' : 'Parcel ID:'}</span>
+              <span className="font-mono font-bold text-slate-900 dark:text-white">{transfer.parcel_id}</span>
             </div>
-
             <div>
-              <span className="text-xs text-slate-500 block mb-1">
-                {language === 'bn' ? 'বর্তমান স্ট্যাটাস:' : 'Current Status:'}
-              </span>
-              <StatusBadge status={transfer.status} size="lg" />
-            </div>
-
-            <div className="text-xs text-slate-600 dark:text-slate-400">
-              <span className="font-semibold">
-                {language === 'bn' ? 'আবেদনের তারিখ:' : 'Recorded Date:'}
-              </span>{' '}
-              {formatDate(transfer.created_at, language)}
-            </div>
-          </div>
-        </div>
-
-        {/* Property Particulars */}
-        <div className="space-y-3 text-xs">
-          <h3 className="font-bold text-slate-900 dark:text-white uppercase tracking-wider text-[11px] border-b pb-1">
-            {language === 'bn' ? 'জমি ও মালিকানা বিবরণী' : 'Property & Parties Summary'}
-          </h3>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60">
-              <span className="text-slate-500 block">{language === 'bn' ? 'প্লট / পার্সেল আইডি:' : 'Parcel ID:'}</span>
-              <span className="font-bold text-slate-900 dark:text-white">{transfer.parcel_id}</span>
-            </div>
-            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60">
-              <span className="text-slate-500 block">{language === 'bn' ? 'দলিল নম্বর:' : 'Deed Number:'}</span>
-              <span className="font-bold font-mono text-slate-900 dark:text-white">
-                {transfer.deed_number}
+              <span className="text-slate-500 block">{bn ? 'বর্তমান মালিক:' : 'Current Owner:'}</span>
+              <span className="font-semibold text-slate-900 dark:text-white">
+                {parcel?.current_owner_name ? localName(parcel.current_owner_name, language) : '—'}
               </span>
             </div>
-            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60">
-              <span className="text-slate-500 block">{language === 'bn' ? 'জমির পরিমাণ:' : 'Area (Decimal):'}</span>
+            <div>
+              <span className="text-slate-500 block">{bn ? 'মৌজা ও দাগ:' : 'Mouza & Dag:'}</span>
+              <span className="font-medium text-slate-900 dark:text-white">
+                {parcel?.mouza || transfer.application_mouza}, {bn ? 'দাগ' : 'Dag'} {parcel?.dag || transfer.application_dag}
+              </span>
+            </div>
+            <div>
+              <span className="text-slate-500 block">{bn ? 'জমির পরিমাণ:' : 'Registered Area:'}</span>
               <span className="font-bold text-emerald-700 dark:text-emerald-400">
-                {formatNumber(transfer.application_area_decimal, language)} {language === 'bn' ? 'শতক' : 'Decimal'}
-              </span>
-            </div>
-            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60">
-              <span className="text-slate-500 block">{language === 'bn' ? 'বিক্রেতা:' : 'Seller:'}</span>
-              <span className="font-semibold text-slate-900 dark:text-white">
-                {localName(transfer.seller_name, language)}
-              </span>
-            </div>
-            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60">
-              <span className="text-slate-500 block">{language === 'bn' ? 'ক্রেতা / আবেদনকারী:' : 'Buyer / Applicant:'}</span>
-              <span className="font-semibold text-slate-900 dark:text-white">
-                {localName(transfer.buyer_name, language)}
-              </span>
-            </div>
-            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60">
-              <span className="text-slate-500 block">{language === 'bn' ? 'মৌজা ও দাগ:' : 'Mouza & Dag:'}</span>
-              <span className="font-semibold text-slate-900 dark:text-white">
-                {transfer.application_mouza}, {language === 'bn' ? 'দাগ' : 'Dag'} {transfer.application_dag}
+                {formatNumber(parcel?.area_decimal || transfer.application_area_decimal, language)} {bn ? 'শতক' : 'Decimal'}
               </span>
             </div>
           </div>
         </div>
 
-        {/* Current owner and ownership history of the parcel */}
-        <div className="space-y-3 text-xs">
-          <h3 className="font-bold text-slate-900 dark:text-white uppercase tracking-wider text-[11px] border-b pb-1">
-            {language === 'bn' ? 'বর্তমান মালিক ও মালিকানার ইতিহাস' : 'Current Owner & Ownership History'}
-          </h3>
-          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60">
-            <span className="text-slate-500 block">{language === 'bn' ? 'বর্তমান মালিক:' : 'Current Owner:'}</span>
-            <span className="font-bold text-slate-900 dark:text-white">
-              {parcel?.current_owner_name ? localName(parcel.current_owner_name, language) : '—'}
+        {/* 2. Transfer Parties */}
+        <div className="border-t border-slate-200 dark:border-slate-800 pt-5 space-y-3">
+          <h2 className="text-xs font-bold uppercase tracking-wide text-slate-500">
+            {bn ? 'হস্তান্তরের পক্ষসমূহ ও দলিলের বিবরণ' : 'Transfer Parties & Deed Details'}
+          </h2>
+          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+            <div className="p-3 rounded-md bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+              <dt className="text-slate-500 mb-0.5">{bn ? 'বিক্রেতা:' : 'Seller:'}</dt>
+              <dd className="font-semibold text-slate-900 dark:text-white">
+                {localName(transfer.seller_name, language)}
+              </dd>
+              <dd className="text-[11px] font-mono text-slate-500 mt-0.5">{transfer.seller_nid}</dd>
+            </div>
+            <div className="p-3 rounded-md bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+              <dt className="text-slate-500 mb-0.5">{bn ? 'ক্রেতা / আবেদনকারী:' : 'Buyer / Transferee:'}</dt>
+              <dd className="font-semibold text-slate-900 dark:text-white">
+                {localName(transfer.buyer_name, language)}
+              </dd>
+              <dd className="text-[11px] font-mono text-slate-500 mt-0.5">{transfer.buyer_nid}</dd>
+            </div>
+          </dl>
+          <div className="flex flex-wrap justify-between gap-2 text-xs pt-1">
+            <span className="text-slate-500">
+              {bn ? 'দলিল নম্বর:' : 'Deed Number:'}{' '}
+              <span className="font-mono font-semibold text-slate-800 dark:text-slate-200">{transfer.deed_number}</span>
+            </span>
+            <span className="text-slate-500">
+              {bn ? 'দলিলের তারিখ:' : 'Deed Date:'}{' '}
+              <span className="font-mono text-slate-800 dark:text-slate-200">{deed?.deed_date || transfer.deed_date || '—'}</span>
             </span>
           </div>
+        </div>
+
+        {/* 3. Ownership History Timeline */}
+        <div className="border-t border-slate-200 dark:border-slate-800 pt-5 space-y-3">
+          <h2 className="text-xs font-bold uppercase tracking-wide text-slate-500">
+            {bn ? 'মালিকানার ইতিহাস ও টাইমলাইন' : 'Ownership History Timeline'}
+          </h2>
           {Array.isArray(ownership_history) && ownership_history.length > 0 ? (
-            <ol className="space-y-2 border-l-2 border-emerald-300 dark:border-emerald-800 pl-3">
+            <ol className="space-y-2 border-l-2 border-emerald-500 pl-3.5 text-xs">
               {ownership_history.map((h: any, i: number) => (
-                <li key={i} className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60">
-                  <div className="font-semibold text-slate-900 dark:text-white">
+                <li key={i} className="relative space-y-0.5">
+                  <span className="absolute -left-[19px] top-1.5 w-2 h-2 rounded-full bg-emerald-600" />
+                  <p className="font-semibold text-slate-900 dark:text-white">
                     {localName(h.previous_owner_name, language)} → {localName(h.new_owner_name, language)}
-                  </div>
-                  <div className="text-[11px] text-slate-500 font-mono">
+                  </p>
+                  <p className="text-[11px] text-slate-500 font-mono">
                     {h.deed_number} • {formatDate(h.recorded_at, language)}
-                  </div>
+                  </p>
                 </li>
               ))}
             </ol>
           ) : (
-            <p className="text-slate-500">
-              {language === 'bn' ? 'এখনো কোনো মালিকানা পরিবর্তন নথিভুক্ত হয়নি।' : 'No ownership changes recorded yet.'}
+            <p className="text-xs text-slate-500">
+              {bn
+                ? 'এখনো কোনো মালিকানা পরিবর্তন নথিভুক্ত হয়নি।'
+                : 'No ownership changes recorded yet.'}
             </p>
           )}
         </div>
 
-        {/* Audit trail + deed integrity status for THIS record (real recomputation) */}
-        {integrity && (
-          <div
-            className={`p-4 rounded-2xl border text-xs space-y-1.5 ${
-              integrity.status === 'OK'
-                ? 'bg-emerald-50/80 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200'
-                : 'bg-rose-50/80 dark:bg-rose-950/40 border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-200'
-            }`}
-          >
-            <div className="flex items-center gap-2 font-bold text-sm">
-              <span>{integrity.status === 'OK' ? '✅' : '🚨'}</span>
-              <span>
-                {integrity.status === 'OK'
-                  ? language === 'bn'
-                    ? 'অডিট চেইন ও দলিল যাচাই সফল (OK)'
-                    : 'Audit trail and deed verified (OK)'
-                  : language === 'bn'
-                  ? 'যাচাই ব্যর্থ (FAIL): পরিবর্তনের চিহ্ন পাওয়া গেছে'
-                  : 'Verification FAILED: signs of alteration found'}
-              </span>
+        {/* 4. Integrity Status (Icon + Text) and Deed Anchor Hash */}
+        <div className="border-t border-slate-200 dark:border-slate-800 pt-5 space-y-3">
+          <h2 className="text-xs font-bold uppercase tracking-wide text-slate-500">
+            {bn ? 'ক্রিপ্টোগ্রাফিক সততা ও দলিল অ্যাঙ্কর' : 'Cryptographic Integrity & Deed Anchor'}
+          </h2>
+
+          {/* Integrity status block */}
+          {integrity && (
+            <div
+              className={`p-3.5 rounded-md border text-xs flex items-center gap-2.5 ${
+                integrity.status === 'OK'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200'
+                  : 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-200'
+              }`}
+            >
+              {integrity.status === 'OK' ? (
+                <ShieldCheck className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+              ) : (
+                <ShieldAlert className="w-5 h-5 text-rose-600 dark:text-rose-400 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+              )}
+              <div className="space-y-0.5">
+                <p className="font-bold">
+                  {integrity.status === 'OK'
+                    ? bn
+                      ? 'অডিট চেইন ও দলিল যাচাই সফল (OK)'
+                      : 'Audit Chain & Deed Verified (OK)'
+                    : bn
+                    ? 'যাচাই ব্যর্থ (FAIL): পরিবর্তনের চিহ্ন পাওয়া গেছে'
+                    : 'Verification FAILED: Alteration Detected'}
+                </p>
+                <p className="text-[11px] opacity-85">
+                  {integrity.status === 'OK'
+                    ? bn
+                      ? `${formatCount(integrity.total_records ?? 0, language)} টি অডিট ব্লক পুনরায় গণনা করে অপরিবর্তিত পাওয়া গেছে।`
+                      : `${integrity.total_records ?? 0} audit blocks recomputed and verified intact.`
+                    : bn
+                    ? 'লেজার চেইনে বা দলিলের মূল অ্যাঙ্করে অমিল সনাক্ত হয়েছে।'
+                    : 'Audit chain hash or deed anchor mismatch detected.'}
+                </p>
+              </div>
             </div>
-            {integrity.status === 'OK' ? (
-              <p className="text-[11px] opacity-80">
-                {language === 'bn'
-                  ? `${formatCount(integrity.total_records ?? 0, language)} টি অডিট ব্লক পুনরায় গণনা করে যাচাই করা হয়েছে।`
-                  : `${integrity.total_records ?? 0} audit blocks were recomputed and checked.`}
+          )}
+
+          {/* Deed anchor hash */}
+          <div className="p-3 rounded-md bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs space-y-1">
+            <span className="text-slate-500 block">
+              {bn ? 'দলিল অ্যাঙ্কর হ্যাশ (SHA-256):' : 'Deed Anchor Hash (SHA-256):'}
+            </span>
+            <span
+              className="font-mono text-slate-800 dark:text-slate-200 block truncate"
+              title={deedHash}
+            >
+              {truncatedHash}
+            </span>
+          </div>
+
+          {/* Finalization Block (if finalized) */}
+          {finalization_audit_record && (
+            <div className="p-3 rounded-md bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-mono space-y-1">
+              <span className="text-slate-500 block">
+                {bn
+                  ? `চূড়ান্ত অডিট ব্লক #${formatCount(finalization_audit_record.sequence_num, language)}:`
+                  : `Finalization Audit Block #${finalization_audit_record.sequence_num}:`}
+              </span>
+              <p className="text-slate-800 dark:text-slate-200 truncate" title={finalization_audit_record.record_hash}>
+                {finalization_audit_record.record_hash}
               </p>
-            ) : (
-              <p className="text-[11px] font-mono">
-                {integrity.failure?.record_id} • {integrity.failure?.field} •{' '}
-                {integrity.failure_belongs_to_this_record
-                  ? language === 'bn'
-                    ? 'এই রেকর্ডের সঙ্গে সম্পর্কিত'
-                    : 'involves this record'
-                  : language === 'bn'
-                  ? 'অন্য একটি রেকর্ডে'
-                  : 'in a different record'}
-              </p>
-            )}
+            </div>
+          )}
+        </div>
+
+        {/* 5. QR Code */}
+        {qr_code_data_url && (
+          <div className="border-t border-slate-200 dark:border-slate-800 pt-5 text-center space-y-2">
+            <div className="inline-block p-2 rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={qr_code_data_url}
+                alt="Verification QR Code"
+                className="w-32 h-32 mx-auto"
+              />
+            </div>
+            <p className="text-[11px] text-slate-500 font-mono">
+              {bn ? 'পাবলিক সত্যতা যাচাইয়ের জন্য কিউআর স্ক্যান করুন' : 'Scan QR code to verify this record'}
+            </p>
           </div>
         )}
 
-        {/* Cryptographic Deed Anchor Integrity */}
-        <div
-          className={`p-4 rounded-2xl border text-xs space-y-1.5 ${
-            is_deed_anchored
-              ? 'bg-emerald-50/80 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200'
-              : 'bg-rose-50/80 dark:bg-rose-950/40 border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-200'
-          }`}
-        >
-          <div className="flex items-center gap-2 font-bold text-sm">
-            <span>{is_deed_anchored ? '🛡️' : '⚠️'}</span>
-            <span>
-              {is_deed_anchored
-                ? language === 'bn'
-                  ? 'ক্রিপ্টোগ্রাফিক দলিল অ্যাঙ্কর যাচাইকৃত (অপরিবর্তিত)'
-                  : 'Cryptographic Deed Anchor Verified (SHA-256 Hash Match)'
-                : language === 'bn'
-                ? 'সতর্কতা: দলিল অ্যাঙ্কর হ্যাশ অমিল!'
-                : 'Warning: Deed Anchor Hash Mismatch!'}
-            </span>
-          </div>
-          <p className="font-mono text-[11px] break-all opacity-80">
-            Hash: {deed?.deed_hash || 'N/A'}
+        {/* 6. Hackathon Synthetic Data Notice (Never claim official legal verification) */}
+        <div className="border-t border-slate-200 dark:border-slate-800 pt-5">
+          <p className="text-xs text-slate-400 dark:text-slate-500 text-center leading-relaxed">
+            {bn
+              ? 'বিজ্ঞপ্তি: প্রদর্শিত সকল তথ্য কাল্পনিক এবং ল্যান্ডটেক ইনোভেশন হ্যাকাথন ২০২৬ এর প্রোটোটাইপের অংশ। এটি ক্রিপ্টোগ্রাফিক দলিল অ্যাঙ্কর ও অপরিবর্তনীয় অডিট লগের একটি কারিগরি প্রদর্শনী, কোনো আনুষ্ঠানিক সরকারি বা আইনি সনদ নয়।'
+              : 'Notice: All data shown is synthetic and part of an academic prototype for the LandTech Innovation Hackathon 2026. This is a technical demonstration of cryptographic deed anchoring and tamper-evident audit logging, not an official government certificate or legal verification.'}
           </p>
         </div>
 
-        {/* Finalization Audit Record (if finalized) */}
-        {finalization_audit_record && (
-          <div className="p-4 rounded-2xl bg-blue-50/80 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-xs space-y-1 text-blue-900 dark:text-blue-200 font-mono">
-            <div className="flex items-center gap-2 font-bold text-sm">
-              <span>🏛️</span>
-              <span>
-                {language === 'bn'
-                  ? `চূড়ান্ত অডিট ব্লক #${formatCount(finalization_audit_record.sequence_num, language)} নিশ্চিতকৃত`
-                  : `Finalization Audit Block #${finalization_audit_record.sequence_num} Confirmed`}
-              </span>
-            </div>
-            <p className="text-[11px] break-all">
-              Record Hash: {finalization_audit_record.record_hash}
-            </p>
-            <p className="text-[11px] text-blue-700 dark:text-blue-300">
-              Timestamp: {finalization_audit_record.timestamp}
-            </p>
-          </div>
-        )}
-
+        {/* Print Action */}
         <div className="text-center pt-2">
-          <button
+          <Button
+            type="button"
+            variant="secondary"
+            size="md"
             onClick={() => window.print()}
-            className="min-h-[44px] px-6 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 font-bold text-xs shadow-md transition inline-flex items-center gap-2"
+            icon={<Printer className="w-4 h-4" strokeWidth={1.75} aria-hidden="true" />}
           >
-            <span>🖨️</span>
-            <span>{language === 'bn' ? 'সনদ প্রিন্ট করুন' : 'Print Official Certificate'}</span>
-          </button>
+            {bn ? 'রেকর্ড প্রিন্ট করুন' : 'Print Record Sheet'}
+          </Button>
         </div>
       </div>
     </div>
