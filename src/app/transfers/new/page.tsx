@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, ArrowRight, ArrowLeft, RotateCcw, FileText, ChevronDown } from 'lucide-react';
+import { Check, ArrowRight, ArrowLeft, RotateCcw, FileText, ChevronDown, Zap } from 'lucide-react';
 import { useLanguage } from '@/components/LanguageContext';
 import ConflictAlert from '@/components/ConflictAlert';
 import StatusBadge from '@/components/StatusBadge';
@@ -311,7 +311,7 @@ export default function NewTransferPage() {
       <details className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 group">
         <summary className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wide cursor-pointer flex items-center justify-between select-none list-none">
           <span className="flex items-center gap-2">
-            <span>⚡</span>
+            <Zap className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" strokeWidth={1.75} aria-hidden="true" />
             <span>
               {bn
                 ? 'ডেমো মূল্যায়নের উদাহরণসমূহ (স্বয়ংক্রিয় পূরণ)'
