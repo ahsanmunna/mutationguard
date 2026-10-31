@@ -25,7 +25,18 @@ Built for the **LandTech Innovation Hackathon 2026** at Daffodil International U
 
 ## The problem
 
-Conflicting land transfers and inconsistencies between deeds, ownership records, and pending applications create serious risks in land administration. MutationGuard demonstrates how a verification layer could flag these inconsistencies **before** a mutation decision is made, explain the evidence behind each finding, and keep an auditable record of every step.
+## The problem
+
+Land is central to Bangladesh's justice system, and land administration is a service where people often meet corruption and conflicting records.
+
+- In July 2026 the Law Minister told Parliament that more than 46 lakh cases are pending in the courts, including about 18 lakh civil cases ([Daily Ittefaq](https://en.ittefaq.com.bd/17265/over-46-lakh-cases-pending-in-country-s-courts), [The Daily Star](https://www.thedailystar.net/news/the-parliament-watch/parliament/news/over-46-lakh-cases-pending-across-courts-bangladesh-law-minister-4218096)).
+- A senior Land Ministry official has said that almost 80% of all legal cases are land-related disputes, as reported in [Dhaka Tribune](https://www.dhakatribune.com/opinion/op-ed/396001/whose-land-is-it-anyway) and the [Daily Observer](https://www.observerbd.com/news/552680).
+- In Transparency International Bangladesh's National Household Survey 2023 (published December 2024), 51% of households using land services experienced corruption, and households that paid bribes for land services paid Tk 11,776 on average ([TIB press release](https://ti-bangladesh.org/articles/press-release/7136), [Prothom Alo](https://en.prothomalo.com/amp/story/bangladesh/y5l9vkwqje)).
+- Different offices (Land Office, Sub-Registrar's Office, Settlement Office) keep separate records that often contradict each other, as the [Daily Observer](https://www.observerbd.com/news/552680) notes. The hackathon brief describes the same causes: fake deeds, mismatched old records, and offices that do not talk to each other.
+
+We did not collect these figures ourselves; they come from the sources linked above.
+
+MutationGuard does not claim to solve these problems. It targets one cause: transfers decided without anyone cross-checking, at that moment, the deed, the registry record and any other pending application for the same parcel.
 
 ## What MutationGuard does
 
