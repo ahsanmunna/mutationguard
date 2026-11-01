@@ -323,8 +323,12 @@ export default function DemoPage() {
       );
       const listRes = await fetch('/api/transfers?parcel_id=P-001');
       const listData = await listRes.json();
-      const karimTr = listData.transfers?.find((t: any) => t.buyer_name === 'Karim Chowdhury');
 
+      // Pick Karim's ACTIVE transfer (not a held/rejected one from an earlier run).
+      const karimTr = listData.transfers?.find(
+        (t: any) =>
+          t.buyer_name === 'Karim Chowdhury' && ['verified', 'under_review', 'approved'].includes(t.status)
+      );
       if (!karimTr) {
         setSingleStepStatus('step3', 'error');
         addLog(
@@ -335,28 +339,25 @@ export default function DemoPage() {
         return;
       }
 
-      // Transition to under_review -> approved -> finalized
-      if (karimTr.status === 'verified') {
-        await fetch(`/api/transfers/${karimTr.id}`, {
+      // Move through the stages one at a time. Stop at the first step the server refuses,
+      // so the real reason is shown instead of being ignored.
+      const stages =
+        karimTr.status === 'verified'
+          ? ['under_review', 'approved', 'finalized']
+          : karimTr.status === 'under_review'
+          ? ['approved', 'finalized']
+          : ['finalized'];
+      let finRes!: Response;
+      let finData: any = null;
+      for (const stage of stages) {
+        finRes = await fetch(`/api/transfers/${karimTr.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'under_review' }),
+          body: JSON.stringify({ status: stage }),
         });
+        finData = await finRes.json();
+        if (!finRes.ok) break;
       }
-
-      await fetch(`/api/transfers/${karimTr.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'approved' }),
-      });
-
-      const finRes = await fetch(`/api/transfers/${karimTr.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'finalized' }),
-      });
-
-      const finData = await finRes.json();
       if (finRes.ok) {
         setSingleStepStatus('step3', 'success');
         addLog(

@@ -25,7 +25,10 @@ export async function middleware(req: NextRequest) {
     pathname === '/login' ||
     pathname.startsWith('/verify') ||
     pathname.startsWith('/api/public') ||
-    pathname.startsWith('/api/auth')
+    pathname.startsWith('/api/auth') ||
+    pathname.startsWith('/brand/') ||
+    pathname === '/icon.png' ||
+    pathname === '/apple-icon.png'
   ) {
     return NextResponse.next();
   }
