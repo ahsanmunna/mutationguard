@@ -8,6 +8,7 @@ import ConflictAlert from '@/components/ConflictAlert';
 import StatusBadge from '@/components/StatusBadge';
 import { Field, Button, PageHeader } from '@/components/ui';
 import { Finding } from '@/lib/rules/types';
+import { DEMO_PARCELS } from '@/lib/demo-parcels';
 import { formatNumber, localName } from '@/lib/i18n/translations';
 
 interface ParcelOption {
@@ -20,44 +21,8 @@ interface ParcelOption {
   area_decimal: number | string;
 }
 
-const DEFAULT_PARCELS: ParcelOption[] = [
-  {
-    id: 'P-001',
-    current_owner_name: 'Rahim Uddin',
-    current_owner_nid: 'NID-DEMO-0001',
-    mouza: 'Dhanmondi-102',
-    khatian: 'K-501',
-    dag: 'D-1001',
-    area_decimal: '5.00',
-  },
-  {
-    id: 'P-002',
-    current_owner_name: 'Abdul Maleque',
-    current_owner_nid: 'NID-DEMO-0004',
-    mouza: 'Gulshan-103',
-    khatian: 'K-602',
-    dag: 'D-2002',
-    area_decimal: '8.50',
-  },
-  {
-    id: 'P-003',
-    current_owner_name: 'Nasima Akter',
-    current_owner_nid: 'NID-DEMO-0005',
-    mouza: 'Mirpur-104',
-    khatian: 'K-703',
-    dag: 'D-3003',
-    area_decimal: '12.25',
-  },
-  {
-    id: 'P-004',
-    current_owner_name: 'Shamsul Haque',
-    current_owner_nid: 'NID-DEMO-0006',
-    mouza: 'Uttara-105',
-    khatian: 'K-804',
-    dag: 'D-4004',
-    area_decimal: '3.75',
-  },
-];
+  // Fallback list shown until /api/parcels answers. One shared source: src/lib/demo-parcels.ts
+  const DEFAULT_PARCELS: ParcelOption[] = DEMO_PARCELS;
 
 function generateDeedNumber(): string {
   const random4 = Math.floor(1000 + Math.random() * 9000);
@@ -252,6 +217,10 @@ export default function NewTransferPage() {
         seller_nid: formData.seller_nid,
         buyer_name: formData.buyer_name,
         buyer_nid: formData.buyer_nid,
+        deed_mouza: formData.deed_mouza,
+        deed_khatian: formData.deed_khatian,
+        deed_dag: formData.deed_dag,
+        deed_area_decimal: formData.deed_area_decimal,
         application_mouza: formData.application_mouza,
         application_khatian: formData.application_khatian,
         application_dag: formData.application_dag,

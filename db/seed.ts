@@ -5,6 +5,7 @@ import { verifyDatabaseSafety, sanitizeErrorMessage } from './safety';
 import { generateEd25519KeyPair } from '../src/lib/crypto/signature';
 import { appendAuditEvent } from '../src/lib/audit/ledger';
 import { buildDeedAnchor } from '../src/lib/audit/deed';
+import { DEMO_PARCELS } from '../src/lib/demo-parcels';
 
 // ---------------------------------------------------------------------------
 // Seed runner
@@ -105,15 +106,24 @@ export async function runSeed(customPool?: any) {
     // 6 fictional parcels (all NIDs are NID-DEMO-XXXX; no real names)
     // NOTE: "Begum Rokeya" (a real historical figure) renamed to "Nasima Akter"
     // -----------------------------------------------------------------------
-    await client.query(`
-      INSERT INTO parcels (id, mouza, khatian, dag, area_decimal, current_owner_name, current_owner_nid, status) VALUES
-      ('P-001', 'Dhanmondi-102', 'K-501', 'D-1001', 5.00, 'Rahim Uddin',    'NID-DEMO-0001', 'active'),
-      ('P-002', 'Gulshan-103',   'K-602', 'D-2002', 8.50, 'Abdul Maleque',  'NID-DEMO-0004', 'active'),
-      ('P-003', 'Mirpur-104',    'K-703', 'D-3003', 3.25, 'Nasima Akter',   'NID-DEMO-0005', 'active'),
-      ('P-004', 'Uttara-105',    'K-804', 'D-4004', 6.00, 'Shamsul Haque',  'NID-DEMO-0006', 'active'),
-      ('P-005', 'Badda-106',     'K-905', 'D-5005', 4.50, 'Tariqul Islam',  'NID-DEMO-0007', 'active'),
-      ('P-006', 'Mohakhali-107', 'K-106', 'D-6006',12.00, 'Nasreen Akhtar', 'NID-DEMO-0008', 'active');
-    `);
+for (const parcel of DEMO_PARCELS) {
+  await client.query(
+    `INSERT INTO parcels (
+       id, mouza, khatian, dag, area_decimal,
+       current_owner_name, current_owner_nid, status
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'active');`,
+    [
+      parcel.id,
+      parcel.mouza,
+      parcel.khatian,
+      parcel.dag,
+      parcel.area_decimal,
+      parcel.current_owner_name,
+      parcel.current_owner_nid,
+    ]
+  );
+}
 
     // -----------------------------------------------------------------------
     // Baseline ownership history

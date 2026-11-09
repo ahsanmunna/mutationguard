@@ -1,8 +1,9 @@
+
 /**
  * GET  /api/transfers   - list transfers (reviewers see all, applicants see only their own)
  * POST /api/transfers   - create a new transfer (runs the 3 detection rules)
  *
- * The POST body may include a deed date + deed fields so the deed and the transfer are
+ * The POST body may include deed fields so the deed and the transfer are
  * inserted atomically in the same transaction.
  *
  * Errors: every failure goes through handleApiError -> 400/401/403/404/409, or a
@@ -10,20 +11,13 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getPool, withTransaction } from '@/../db';
-import { createTransfer, InlineDeedFields } from '@/lib/workflow/transfer-service';
+import { createTransfer } from '@/lib/workflow/transfer-service';
+import { parseInlineDeed } from '@/lib/workflow/inline-deed';
+import { optionalText, requirePositiveNumber, requireText } from '@/lib/validation';
 import { requireAuth, requireRole } from '@/lib/auth';
 import { MutationApplication } from '@/lib/rules/types';
 import { handleApiError } from '@/lib/api-errors';
 import { BadRequestError } from '@/lib/errors';
-
-/** Reads a required, non-empty text field from the JSON body. */
-function requireText(body: any, key: string): string {
-  const value = body?.[key];
-  if (typeof value !== 'string' || value.trim() === '') {
-    throw new BadRequestError(`Field "${key}" is required.`);
-  }
-  return value.trim();
-}
 
 export async function GET(req: NextRequest) {
   try {
@@ -73,14 +67,13 @@ export async function POST(req: NextRequest) {
       throw new BadRequestError('Request body must be valid JSON.');
     }
 
-    const parcelId   = requireText(body, 'parcel_id');
-    const deedNumber = requireText(body, 'deed_number');
-    const sellerName = requireText(body, 'seller_name');
-    const buyerName  = requireText(body, 'buyer_name');
-    const area       = Number(body.application_area_decimal);
-    if (!Number.isFinite(area) || area <= 0) {
-      throw new BadRequestError('Field "application_area_decimal" must be a positive number.');
-    }
+    // Every field is length- and type-checked here, before anything touches the database.
+    // (deed_number is limited to 50 characters because the audit ledger stores it as an entity id.)
+    const parcelId   = requireText(body, 'parcel_id', 50);
+    const deedNumber = requireText(body, 'deed_number', 50);
+    const sellerName = requireText(body, 'seller_name', 100);
+    const buyerName  = requireText(body, 'buyer_name', 100);
+    const area       = requirePositiveNumber(body, 'application_area_decimal');
 
     // Fetch actor's private key from DB (needed for audit signing).
     // NEVER return private_key from any API endpoint.
@@ -99,32 +92,25 @@ export async function POST(req: NextRequest) {
       deed_number:              deedNumber,
       applicant_username:       currentUser.username,
       seller_name:              sellerName,
-      seller_nid:               String(body.seller_nid ?? ''),
+      seller_nid:               optionalText(body, 'seller_nid', 50),
       buyer_name:               buyerName,
-      buyer_nid:                String(body.buyer_nid ?? ''),
-      application_mouza:        String(body.application_mouza ?? ''),
-      application_khatian:      String(body.application_khatian ?? ''),
-      application_dag:          String(body.application_dag ?? ''),
+      buyer_nid:                optionalText(body, 'buyer_nid', 50),
+      application_mouza:        optionalText(body, 'application_mouza', 50),
+      application_khatian:      optionalText(body, 'application_khatian', 50),
+      application_dag:          optionalText(body, 'application_dag', 50),
       application_area_decimal: area,
     };
 
-    // Optional inline deed (only when a deed date is supplied).
-    let inlineDeed: InlineDeedFields | undefined;
-    if (body.deed_date) {
-      inlineDeed = {
-        deed_number:  deedNumber,
-        parcel_id:    parcelId,
-        seller_name:  sellerName,
-        seller_nid:   application.seller_nid,
-        buyer_name:   buyerName,
-        buyer_nid:    application.buyer_nid,
-        mouza:        application.application_mouza,
-        khatian:      application.application_khatian,
-        dag:          application.application_dag,
-        area_decimal: area,
-        deed_date:    String(body.deed_date),
-      };
-    }
+    // Optional inline deed. It is built from the DEED fields the user entered (deed_*),
+    // never from the application fields, so the two can genuinely differ.
+    const inlineDeed = parseInlineDeed(body, {
+      parcelId,
+      deedNumber,
+      sellerName,
+      sellerNid: application.seller_nid,
+      buyerName,
+      buyerNid: application.buyer_nid,
+    });
 
     const result = await withTransaction(async (client) => {
       return createTransfer(client, application, currentUser, actorPrivKey, inlineDeed);

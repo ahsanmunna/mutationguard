@@ -168,14 +168,12 @@ export default function PublicVerifyPage() {
               <dd className="font-semibold text-slate-900 dark:text-white">
                 {localName(transfer.seller_name, language)}
               </dd>
-              <dd className="text-[11px] font-mono text-slate-500 mt-0.5">{transfer.seller_nid}</dd>
             </div>
             <div className="p-3 rounded-md bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
               <dt className="text-slate-500 mb-0.5">{bn ? 'ক্রেতা / আবেদনকারী:' : 'Buyer / Transferee:'}</dt>
               <dd className="font-semibold text-slate-900 dark:text-white">
                 {localName(transfer.buyer_name, language)}
               </dd>
-              <dd className="text-[11px] font-mono text-slate-500 mt-0.5">{transfer.buyer_nid}</dd>
             </div>
           </dl>
           <div className="flex flex-wrap justify-between gap-2 text-xs pt-1">
