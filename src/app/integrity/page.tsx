@@ -41,6 +41,10 @@ export default function IntegrityPage() {
         ? bn
           ? `দলিল ${verification.record_id} এর "${verification.field}" ফিল্ডে পরিবর্তন ধরা পড়েছে`
           : `Deed ${verification.record_id} was altered: field "${verification.field}" no longer matches its anchor`
+        : verification.kind === 'ownership'
+        ? bn
+          ? `পার্সেল ${verification.record_id} এর মালিকানা ইতিহাসে "${verification.field}" ফিল্ডে পরিবর্তন ধরা পড়েছে`
+          : `Parcel ${verification.record_id} ownership history was altered: field "${verification.field}" no longer matches its record`
         : bn
         ? `ব্লক #${formatCount(verification.sequence_num, language)} এর "${verification.field}" ফিল্ডে চেইন বিচ্ছিন্ন`
         : `Broken at block sequence #${verification.sequence_num} on field "${verification.field}"`
@@ -77,14 +81,14 @@ export default function IntegrityPage() {
     }
   }, [isReviewer]);
 
-  const handleSimulateTamper = async (seq: number) => {
+  const runTamper = async (payload: Record<string, unknown>) => {
     try {
       setTampering(true);
       setTamperMessage(null);
       const res = await fetch('/api/audit/tamper', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sequence_num: seq }),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
@@ -101,28 +105,11 @@ export default function IntegrityPage() {
     }
   };
 
-  const handleDeedTamper = async () => {
-    try {
-      setTampering(true);
-      setTamperMessage(null);
-      const res = await fetch('/api/audit/tamper', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target: 'deed', deed_number: 'DEED-2026-001' }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setTamperMessage(data.message);
-        await runVerification();
-      } else {
-        setTamperMessage(`Error: ${data.error}`);
-      }
-    } catch (err: any) {
-      setTamperMessage(`Error: ${err.message}`);
-    } finally {
-      setTampering(false);
-    }
-  };
+  const handleSimulateTamper = (seq: number) => runTamper({ sequence_num: seq });
+
+  const handleDeedTamper = () => runTamper({ target: 'deed', deed_number: 'DEED-2026-001' });
+
+  const handleOwnerTamper = () => runTamper({ target: 'owner', parcel_id: 'P-001' });
 
   if (!isReviewer) {
     return (
@@ -214,8 +201,8 @@ export default function IntegrityPage() {
               <p className="text-xs mt-0.5 opacity-90">
                 {verification.valid
                   ? bn
-                    ? `মোট ব্লক: ${formatCount(verification.total_records, language)} • যাচাইকৃত দলিল: ${formatCount(verification.deeds_checked ?? 0, language)} • হেড হ্যাশ: ${verification.latest_hash?.slice(0, 16)}...`
-                    : `Total Blocks: ${verification.total_records} • Deeds Checked: ${verification.deeds_checked ?? 0} • Head Hash: ${verification.latest_hash?.slice(0, 16)}...`
+                    ? `মোট ব্লক: ${formatCount(verification.total_records, language)} • যাচাইকৃত দলিল: ${formatCount(verification.deeds_checked ?? 0, language)} • যাচাইকৃত পার্সেল: ${formatCount(verification.parcels_checked ?? 0, language)} • হেড হ্যাশ: ${verification.latest_hash?.slice(0, 16)}...`
+                    : `Total Blocks: ${verification.total_records} • Deeds Checked: ${verification.deeds_checked ?? 0} • Parcels Checked: ${verification.parcels_checked ?? 0} • Head Hash: ${verification.latest_hash?.slice(0, 16)}...`
                   : failureSummary}
               </p>
             </div>
@@ -286,6 +273,18 @@ export default function IntegrityPage() {
             className="border-amber-300 dark:border-amber-700 hover:bg-amber-100/50"
           >
             {bn ? 'দলিলে টেম্পারিং করুন (DEED-2026-001)' : 'Tamper with deed (DEED-2026-001)'}
+          </Button>
+
+          {/* Tamper with owner button */}
+          <Button
+            variant="secondary"
+            size="sm"
+            loading={tampering}
+            disabled={tampering || loading}
+            onClick={handleOwnerTamper}
+            className="border-amber-300 dark:border-amber-700 hover:bg-amber-100/50"
+          >
+            {bn ? 'মালিকানায় টেম্পারিং করুন (P-001)' : 'Tamper with owner (P-001)'}
           </Button>
 
           {/* Block tamper selector and button */}

@@ -5,7 +5,7 @@ import { verifyDatabaseSafety, sanitizeErrorMessage } from './safety';
 import { generateEd25519KeyPair } from '../src/lib/crypto/signature';
 import { appendAuditEvent } from '../src/lib/audit/ledger';
 import { buildDeedAnchor } from '../src/lib/audit/deed';
-import { DEMO_PARCELS } from '../src/lib/demo-parcels';
+import { DEMO_PARCELS, DEMO_OWNERSHIP_BASELINE } from '../src/lib/demo-parcels';
 
 // ---------------------------------------------------------------------------
 // Seed runner
@@ -128,15 +128,19 @@ for (const parcel of DEMO_PARCELS) {
     // -----------------------------------------------------------------------
     // Baseline ownership history
     // -----------------------------------------------------------------------
-    await client.query(`
-      INSERT INTO ownership_history (parcel_id, previous_owner_name, new_owner_name, deed_number, recorded_at) VALUES
-      ('P-001', 'Original State Allotment', 'Rahim Uddin',    'GOV-ALLOT-1998',  '2015-05-12 10:00:00+06'),
-      ('P-002', 'Original State Allotment', 'Abdul Maleque',  'GOV-ALLOT-2001',  '2016-08-20 11:30:00+06'),
-      ('P-003', 'Abul Kashem',              'Nasima Akter',   'DEED-HIST-2012',  '2018-02-14 09:15:00+06'),
-      ('P-004', 'Altaf Hossain',            'Shamsul Haque',  'DEED-HIST-2015',  '2019-11-05 14:00:00+06'),
-      ('P-005', 'Anisur Rahman',            'Tariqul Islam',  'DEED-HIST-2018',  '2021-04-10 15:20:00+06'),
-      ('P-006', 'Farida Begum',             'Nasreen Akhtar', 'DEED-HIST-2020',  '2022-09-01 10:45:00+06');
-    `);
+    for (const entry of DEMO_OWNERSHIP_BASELINE) {
+      await client.query(
+        `INSERT INTO ownership_history (parcel_id, previous_owner_name, new_owner_name, deed_number, recorded_at)
+         VALUES ($1, $2, $3, $4, $5);`,
+        [
+          entry.parcel_id,
+          entry.previous_owner_name,
+          entry.new_owner_name,
+          entry.deed_number,
+          entry.recorded_at,
+        ]
+      );
+    }
 
     // -----------------------------------------------------------------------
     // Deeds (all buyer/seller NIDs use NID-DEMO-XXXX)
@@ -261,6 +265,29 @@ for (const parcel of DEMO_PARCELS) {
       },
       systemKp.privateKey
     );
+
+    // -----------------------------------------------------------------------
+    // Anchor each parcel's baseline ownership in the tamper-evident chain
+    // -----------------------------------------------------------------------
+    for (const entry of DEMO_OWNERSHIP_BASELINE) {
+      await appendAuditEvent(
+        client,
+        {
+          event_type:     'PARCEL_BASELINE_RECORDED',
+          entity_id:      entry.parcel_id,
+          entity_type:    'parcel',
+          actor_username: 'system_audit',
+          actor_role:     'system',
+          payload: {
+            parcel_id:           entry.parcel_id,
+            owner_name:          entry.new_owner_name,
+            previous_owner_name: entry.previous_owner_name,
+            deed_number:         entry.deed_number,
+          },
+        },
+        systemKp.privateKey
+      );
+    }
 
     await client.query('COMMIT');
     console.log('[Seed] Seeding completed successfully.');
