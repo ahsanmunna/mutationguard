@@ -1,7 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   checkOwnershipHistory,
   OwnershipCheckInput,
+  verifyOwnershipHistory,
+  parseAuditPayload,
 } from '../../src/lib/audit/ownership';
 
 function makeHealthyBaselineInput(): OwnershipCheckInput {
@@ -346,5 +348,260 @@ describe('checkOwnershipHistory (pure verification)', () => {
       record_id: 'P-002',
       field: 'current_owner',
     });
+  });
+});
+
+describe('parseAuditPayload (safe JSON parsing)', () => {
+  it('returns null on invalid JSON string instead of throwing', () => {
+    expect(parseAuditPayload('{invalid-json')).toBeNull();
+    expect(parseAuditPayload('not valid json')).toBeNull();
+    expect(parseAuditPayload('')).toBeNull();
+  });
+
+  it('parses valid JSON string and passes through objects', () => {
+    expect(parseAuditPayload('{"parcel_id":"P-001"}')).toEqual({ parcel_id: 'P-001' });
+    expect(parseAuditPayload({ parcel_id: 'P-001' })).toEqual({ parcel_id: 'P-001' });
+  });
+
+  it('returns null on non-object JSON values or null/undefined', () => {
+    expect(parseAuditPayload(null)).toBeNull();
+    expect(parseAuditPayload(undefined)).toBeNull();
+    expect(parseAuditPayload('null')).toBeNull();
+    expect(parseAuditPayload('123')).toBeNull();
+  });
+});
+
+describe('verifyOwnershipHistory (consistent snapshot and safe parsing)', () => {
+  it('uses a single client with REPEATABLE READ READ ONLY transaction and commits', async () => {
+    const executedQueries: string[] = [];
+    const mockClient = {
+      query: vi.fn().mockImplementation(async (sql: string) => {
+        executedQueries.push(sql.trim());
+        if (sql.includes('FROM parcels')) {
+          return { rows: [{ id: 'P-001', current_owner_name: 'Rahim Uddin' }] };
+        }
+        if (sql.includes('FROM ownership_history')) {
+          return {
+            rows: [
+              {
+                id: 1,
+                parcel_id: 'P-001',
+                previous_owner_name: 'Original State Allotment',
+                new_owner_name: 'Rahim Uddin',
+                transfer_id: null,
+                deed_number: 'GOV-ALLOT-1998',
+                recorded_at: '2015-05-12 10:00:00+06',
+              },
+            ],
+          };
+        }
+        if (sql.includes('FROM transfers')) {
+          return { rows: [] };
+        }
+        if (sql.includes('FROM audit_ledger')) {
+          return {
+            rows: [
+              {
+                sequence_num: 1,
+                event_type: 'PARCEL_BASELINE_RECORDED',
+                entity_id: 'P-001',
+                payload: JSON.stringify({
+                  parcel_id: 'P-001',
+                  owner_name: 'Rahim Uddin',
+                  deed_number: 'GOV-ALLOT-1998',
+                }),
+              },
+            ],
+          };
+        }
+        return { rows: [] };
+      }),
+      release: vi.fn(),
+    };
+    const mockPool = {
+      connect: vi.fn().mockResolvedValue(mockClient),
+    };
+
+    const res = await verifyOwnershipHistory(mockPool as any);
+    expect(res.failure).toBeNull();
+    expect(res.parcels_checked).toBe(1);
+
+    expect(mockPool.connect).toHaveBeenCalledTimes(1);
+    expect(executedQueries[0]).toBe('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    expect(executedQueries[1]).toContain('FROM parcels');
+    expect(executedQueries[2]).toContain('FROM ownership_history');
+    expect(executedQueries[3]).toContain('FROM transfers');
+    expect(executedQueries[4]).toContain('FROM audit_ledger');
+    expect(executedQueries[5]).toBe('COMMIT');
+    expect(mockClient.release).toHaveBeenCalledTimes(1);
+  });
+
+  it('rolls back and releases client on query error, rethrowing original error', async () => {
+    const executedQueries: string[] = [];
+    const mockClient = {
+      query: vi.fn().mockImplementation(async (sql: string) => {
+        executedQueries.push(sql.trim());
+        if (sql.includes('FROM parcels')) {
+          throw new Error('Database connection lost');
+        }
+        return { rows: [] };
+      }),
+      release: vi.fn(),
+    };
+    const mockPool = {
+      connect: vi.fn().mockResolvedValue(mockClient),
+    };
+
+    await expect(verifyOwnershipHistory(mockPool as any)).rejects.toThrow('Database connection lost');
+    expect(executedQueries).toContain('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    expect(executedQueries).toContain('ROLLBACK');
+    expect(mockClient.release).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores rollback errors and still rethrows original error and releases client', async () => {
+    const mockClient = {
+      query: vi.fn().mockImplementation(async (sql: string) => {
+        if (sql.includes('FROM parcels')) throw new Error('Query failure');
+        if (sql.includes('ROLLBACK')) throw new Error('Rollback failure');
+        return { rows: [] };
+      }),
+      release: vi.fn(),
+    };
+    const mockPool = {
+      connect: vi.fn().mockResolvedValue(mockClient),
+    };
+
+    await expect(verifyOwnershipHistory(mockPool as any)).rejects.toThrow('Query failure');
+    expect(mockClient.release).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not throw when an audit event has an unreadable payload and reports normal ownership failure', async () => {
+    const mockClient = {
+      query: vi.fn().mockImplementation(async (sql: string) => {
+        if (sql.includes('FROM parcels')) {
+          return { rows: [{ id: 'P-001', current_owner_name: 'Rahim Uddin' }] };
+        }
+        if (sql.includes('FROM ownership_history')) {
+          return {
+            rows: [
+              {
+                id: 1,
+                parcel_id: 'P-001',
+                previous_owner_name: 'Original State Allotment',
+                new_owner_name: 'Rahim Uddin',
+                transfer_id: null,
+                deed_number: 'GOV-ALLOT-1998',
+                recorded_at: '2015-05-12 10:00:00+06',
+              },
+            ],
+          };
+        }
+        if (sql.includes('FROM transfers')) {
+          return { rows: [] };
+        }
+        if (sql.includes('FROM audit_ledger')) {
+          return {
+            rows: [
+              {
+                sequence_num: 1,
+                event_type: 'PARCEL_BASELINE_RECORDED',
+                entity_id: 'P-001',
+                payload: '<<<corrupt invalid json{foo:>>>',
+              },
+            ],
+          };
+        }
+        return { rows: [] };
+      }),
+      release: vi.fn(),
+    };
+    const mockPool = {
+      connect: vi.fn().mockResolvedValue(mockClient),
+    };
+
+    // Should not throw, but report baseline_anchor failure because unreadable payload was skipped
+    const res = await verifyOwnershipHistory(mockPool as any);
+    expect(res.failure).not.toBeNull();
+    expect(res.failure).toMatchObject({
+      valid: false,
+      kind: 'ownership',
+      record_id: 'P-001',
+      field: 'baseline_anchor',
+    });
+    expect(mockClient.release).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not throw when a TRANSFER_FINALIZED event has an unreadable payload and reports finalized_event failure', async () => {
+    const mockClient = {
+      query: vi.fn().mockImplementation(async (sql: string) => {
+        if (sql.includes('FROM parcels')) {
+          return { rows: [{ id: 'P-001', current_owner_name: 'Karim Chowdhury' }] };
+        }
+        if (sql.includes('FROM ownership_history')) {
+          return {
+            rows: [
+              {
+                id: 1,
+                parcel_id: 'P-001',
+                previous_owner_name: 'Original State Allotment',
+                new_owner_name: 'Rahim Uddin',
+                transfer_id: null,
+                deed_number: 'GOV-ALLOT-1998',
+                recorded_at: '2015-05-12 10:00:00+06',
+              },
+              {
+                id: 2,
+                parcel_id: 'P-001',
+                previous_owner_name: 'Rahim Uddin',
+                new_owner_name: 'Karim Chowdhury',
+                transfer_id: 'TR-2026-0001',
+                deed_number: 'DEED-2026-001',
+                recorded_at: '2026-01-20T10:00:00.000Z',
+              },
+            ],
+          };
+        }
+        if (sql.includes('FROM transfers')) {
+          return { rows: [{ id: 'TR-2026-0001', parcel_id: 'P-001', status: 'finalized' }] };
+        }
+        if (sql.includes('FROM audit_ledger')) {
+          return {
+            rows: [
+              {
+                sequence_num: 1,
+                event_type: 'PARCEL_BASELINE_RECORDED',
+                entity_id: 'P-001',
+                payload: {
+                  parcel_id: 'P-001',
+                  owner_name: 'Rahim Uddin',
+                  deed_number: 'GOV-ALLOT-1998',
+                },
+              },
+              {
+                sequence_num: 2,
+                event_type: 'TRANSFER_FINALIZED',
+                entity_id: 'TR-2026-0001',
+                payload: 'BAD_JSON::{',
+              },
+            ],
+          };
+        }
+        return { rows: [] };
+      }),
+      release: vi.fn(),
+    };
+    const mockPool = {
+      connect: vi.fn().mockResolvedValue(mockClient),
+    };
+
+    const res = await verifyOwnershipHistory(mockPool as any);
+    expect(res.failure).not.toBeNull();
+    expect(res.failure).toMatchObject({
+      valid: false,
+      kind: 'ownership',
+      record_id: 'P-001',
+      field: 'finalized_event',
+    });
+    expect(mockClient.release).toHaveBeenCalledTimes(1);
   });
 });

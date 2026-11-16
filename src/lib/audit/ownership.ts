@@ -6,7 +6,7 @@
  * PARCEL_BASELINE_RECORDED event through every TRANSFER_FINALIZED event to the
  * live parcels.current_owner_name column.
  */
-import { Pool } from 'pg';
+import { Pool, QueryResult } from 'pg';
 import type { IntegrityFailure } from './integrity';
 
 export interface OwnershipParcelRow {
@@ -467,14 +467,22 @@ export function checkOwnershipHistory(
   return null;
 }
 
-function parseAuditPayload(raw: unknown): Record<string, unknown> {
+export function parseAuditPayload(raw: unknown): Record<string, unknown> | null {
   if (typeof raw === 'string') {
-    return JSON.parse(raw) as Record<string, unknown>;
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+      return null;
+    } catch {
+      return null;
+    }
   }
-  if (raw && typeof raw === 'object') {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
     return raw as Record<string, unknown>;
   }
-  return {};
+  return null;
 }
 
 /**
@@ -489,27 +497,43 @@ export async function verifyOwnershipHistory(
   const parcelWhere = onlyParcelId ? 'WHERE id = $1' : '';
   const historyWhere = onlyParcelId ? 'WHERE parcel_id = $1' : '';
 
-  const [parcelsRes, historyRes, transfersRes, eventsRes] = await Promise.all([
-    pool.query(
+  const client = await pool.connect();
+  let parcelsRes: QueryResult;
+  let historyRes: QueryResult;
+  let transfersRes: QueryResult;
+  let eventsRes: QueryResult;
+  try {
+    await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+    parcelsRes = await client.query(
       `SELECT id, current_owner_name
        FROM parcels ${parcelWhere}
        ORDER BY id ASC;`,
       parcelParams
-    ),
-    pool.query(
+    );
+    historyRes = await client.query(
       `SELECT id, parcel_id, previous_owner_name, new_owner_name, transfer_id, deed_number, recorded_at
        FROM ownership_history ${historyWhere}
        ORDER BY recorded_at ASC, id ASC;`,
       parcelParams
-    ),
-    pool.query(`SELECT id, parcel_id, status FROM transfers;`),
-    pool.query(
+    );
+    transfersRes = await client.query(`SELECT id, parcel_id, status FROM transfers;`);
+    eventsRes = await client.query(
       `SELECT sequence_num, event_type, entity_id, payload
        FROM audit_ledger
        WHERE event_type IN ('PARCEL_BASELINE_RECORDED', 'TRANSFER_FINALIZED')
        ORDER BY sequence_num ASC;`
-    ),
-  ]);
+    );
+    await client.query('COMMIT');
+  } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {
+      // ignore rollback errors
+    }
+    throw err;
+  } finally {
+    client.release();
+  }
 
   const parcels: OwnershipParcelRow[] = parcelsRes.rows.map((r) => ({
     id: String(r.id),
@@ -538,6 +562,9 @@ export async function verifyOwnershipHistory(
   for (const row of eventsRes.rows) {
     const seq = Number(row.sequence_num);
     const payload = parseAuditPayload(row.payload);
+    if (!payload) {
+      continue;
+    }
 
     if (row.event_type === 'PARCEL_BASELINE_RECORDED') {
       baselineEvents.push({
