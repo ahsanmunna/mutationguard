@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPool } from '@/../db';
 import { verifyAuditChain } from '@/lib/audit/ledger';
 import { verifyDeedAnchors } from '@/lib/audit/integrity';
+import { verifyOwnershipHistory } from '@/lib/audit/ownership';
 import { handleApiError } from '@/lib/api-errors';
 import { NotFoundError } from '@/lib/errors';
 import { generateQrCodeDataUrl } from '@/lib/qrcode/generator';
@@ -68,12 +69,17 @@ export async function GET(
       [row.parcel_id]
     );
 
-    // 4. Real integrity check for THIS record: the whole chain must verify AND this
-    //    transfer's deed must still match the anchor stored in the chain.
+    // 4. Real integrity check for THIS record: the whole chain must verify, this
+    //    transfer's deed must match its chain anchor, and this parcel's ownership
+    //    history must verify.
     const chain = await verifyAuditChain(pool);
     const deedCheck = await verifyDeedAnchors(pool, row.deed_number);
+    const ownershipCheck =
+      chain.valid && !deedCheck.failure
+        ? await verifyOwnershipHistory(pool, row.parcel_id)
+        : null;
 
-    let failure: { kind: 'chain' | 'deed'; record_id: string; field: string } | null = null;
+    let failure: { kind: 'chain' | 'deed' | 'ownership'; record_id: string; field: string } | null = null;
     let belongsToThisRecord = false;
 
     if (!chain.valid) {
@@ -88,6 +94,13 @@ export async function GET(
     } else if (deedCheck.failure) {
       failure = { kind: 'deed', record_id: deedCheck.failure.record_id, field: deedCheck.failure.field };
       belongsToThisRecord = true; // we only checked THIS transfer's deed
+    } else if (ownershipCheck?.failure) {
+      failure = {
+        kind: 'ownership',
+        record_id: ownershipCheck.failure.record_id,
+        field: ownershipCheck.failure.field,
+      };
+      belongsToThisRecord = true; // we only checked THIS transfer's parcel
     }
 
     const integrityOk = failure === null;
@@ -95,6 +108,7 @@ export async function GET(
       status: integrityOk ? 'OK' : 'FAIL',
       chain_valid: chain.valid,
       deed_valid: deedCheck.failure === null,
+      ownership_valid: ownershipCheck ? ownershipCheck.failure === null : null,
       total_records: chain.valid ? chain.total_records : null,
       failure,
       failure_belongs_to_this_record: belongsToThisRecord,

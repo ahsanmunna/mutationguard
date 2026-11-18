@@ -7,6 +7,8 @@
  * Body options:
  *   { target: 'deed',   deed_number?: 'DEED-2026-001' }  -> edits a deed's area directly in the
  *                                                            deeds table (+2.00 decimal)
+ *   { target: 'owner',  parcel_id?: 'P-001' }            -> sets parcels.current_owner_name to
+ *                                                            'Unknown Person (tampered)'
  *   { target: 'ledger', sequence_num: 3 }                -> edits an old audit payload
  *   { sequence_num: 3 }                                  -> same as target 'ledger' (older UI)
  */
@@ -55,6 +57,35 @@ export async function POST(req: NextRequest) {
         success: true,
         message:
           `Deed ${deedNumber}: area changed from ${result.from} to ${result.to} decimal directly in the database. ` +
+          `Run the integrity check to see it caught.`,
+      });
+    }
+
+    // ---- Tamper with a PARCEL owner directly in parcels ----
+    if (body?.target === 'owner') {
+      const parcelId = typeof body.parcel_id === 'string' && body.parcel_id.trim()
+        ? body.parcel_id.trim()
+        : 'P-001';
+
+      const result = await withTransaction(async (client) => {
+        const before = await client.query(
+          'SELECT current_owner_name FROM parcels WHERE id = $1;',
+          [parcelId]
+        );
+        if (before.rowCount === 0) {
+          throw new NotFoundError(`Parcel "${parcelId}" not found.`);
+        }
+        const after = await client.query(
+          `UPDATE parcels SET current_owner_name = $1 WHERE id = $2 RETURNING current_owner_name;`,
+          ['Unknown Person (tampered)', parcelId]
+        );
+        return { from: before.rows[0].current_owner_name, to: after.rows[0].current_owner_name };
+      });
+
+      return NextResponse.json({
+        success: true,
+        message:
+          `Parcel ${parcelId}: owner changed from "${result.from}" to "${result.to}" directly in the database. ` +
           `Run the integrity check to see it caught.`,
       });
     }

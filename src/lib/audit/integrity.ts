@@ -1,5 +1,6 @@
 /**
- * Full integrity check = (1) audit chain  +  (2) every deed against its chain anchor.
+ * Full integrity check = (1) audit chain + (2) every deed against its chain anchor
+ *                      + (3) every parcel's ownership history chain.
  *
  * Why deeds are checked against the CHAIN (not just against their own hash column):
  *   someone with database access could edit a deed's columns AND its stored hash together.
@@ -11,13 +12,14 @@
 import { Pool } from 'pg';
 import { verifyAuditChain } from './ledger';
 import { buildDeedAnchor } from './deed';
+import { verifyOwnershipHistory } from './ownership';
 import { sha256 } from '../crypto/hasher';
 
 export interface IntegrityFailure {
   valid:            false;
-  kind:             'chain' | 'deed';
-  record_id:        string;   // 'Block #12' for chain failures, the deed number for deed failures
-  sequence_num:     number;   // block number (for deed failures: the block holding the anchor, or 0)
+  kind:             'chain' | 'deed' | 'ownership';
+  record_id:        string;   // 'Block #12' for chain failures, deed number for deed failures, parcel id for ownership failures
+  sequence_num:     number;   // block number (for deed/ownership failures: the block holding the anchor/event, or 0)
   field:            string;
   expected_value:   string;
   calculated_value: string;
@@ -25,10 +27,11 @@ export interface IntegrityFailure {
 }
 
 export interface IntegritySuccess {
-  valid:         true;
-  total_records: number;
-  latest_hash:   string;
-  deeds_checked: number;
+  valid:           true;
+  total_records:   number;
+  latest_hash:     string;
+  deeds_checked:   number;
+  parcels_checked: number;
 }
 
 export type IntegrityResult = IntegritySuccess | IntegrityFailure;
@@ -200,7 +203,7 @@ export async function verifyDeedAnchors(pool: Pool, onlyDeedNumber?: string): Pr
   return { failure: null, deeds_checked: deedRes.rows.length };
 }
 
-/** The check shown on the Integrity page: chain first, then deeds. Returns the FIRST failure. */
+/** The check shown on the Integrity page: chain first, then deeds, then ownership history. Returns the FIRST failure. */
 export async function verifyIntegrity(pool: Pool): Promise<IntegrityResult> {
   const chain = await verifyAuditChain(pool);
   if (!chain.valid) {
@@ -219,10 +222,14 @@ export async function verifyIntegrity(pool: Pool): Promise<IntegrityResult> {
   const deeds = await verifyDeedAnchors(pool);
   if (deeds.failure) return deeds.failure;
 
+  const ownership = await verifyOwnershipHistory(pool);
+  if (ownership.failure) return ownership.failure;
+
   return {
     valid: true,
     total_records: chain.total_records,
     latest_hash: chain.latest_hash,
     deeds_checked: deeds.deeds_checked,
+    parcels_checked: ownership.parcels_checked,
   };
 }
