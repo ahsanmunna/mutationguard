@@ -16,8 +16,9 @@ import { useLanguage } from '@/components/LanguageContext';
 import StatusBadge from '@/components/StatusBadge';
 import ConflictAlert from '@/components/ConflictAlert';
 import { Button, PageHeader } from '@/components/ui';
-import { formatNumber } from '@/lib/i18n/translations';
 import { Finding } from '@/lib/rules/types';
+import { DEMO_PARCELS } from '@/lib/demo-parcels';
+import { evaluateStepOutcome, StepEvaluation } from '@/lib/demo-scenarios';
 
 type ButtonStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -30,6 +31,86 @@ interface ConcurrentResult {
   error?: string;
 }
 
+function ConcurrentResultCard({
+  title,
+  buyerNid,
+  result,
+  bn,
+}: {
+  title: string;
+  buyerNid: string;
+  result: ConcurrentResult | null;
+  bn: boolean;
+}) {
+  if (!result) return null;
+
+  const isVerified = result.status === 'verified';
+  const isHeld = result.status === 'held';
+  const doubleSaleFinding = result.findings?.find((f) => f.rule_id === 'DOUBLE_SALE');
+  const conflictId =
+    doubleSaleFinding?.evidence?.conflict_id ||
+    doubleSaleFinding?.observed?.active_transfer_id ||
+    '';
+
+  return (
+    <div className="p-4 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 space-y-2">
+      <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
+        <div>
+          <span className="font-bold text-slate-900 dark:text-white block">
+            {title}
+          </span>
+          <span className="font-mono text-[11px] text-slate-500">
+            {result.deed_number} • {buyerNid}
+          </span>
+        </div>
+        {result.status && <StatusBadge status={result.status} size="sm" />}
+      </div>
+
+      {result.transfer_id && (
+        <p className="font-mono text-slate-800 dark:text-slate-200 font-semibold">
+          ID: {result.transfer_id}
+        </p>
+      )}
+
+      {result.error && (
+        <p className="text-xs text-rose-600 dark:text-rose-400 font-medium flex items-center gap-1">
+          <TriangleAlert className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+          <span>{result.error}</span>
+        </p>
+      )}
+
+      {isVerified && (
+        <p className="text-[11px] text-emerald-800 dark:text-emerald-300">
+          {bn
+            ? 'লক আগে পেয়ে সক্রিয় যাচাইকৃত আবেদন হিসেবে গৃহীত হয়েছে।'
+            : 'Acquired write lock first and recorded as active verified transfer.'}
+        </p>
+      )}
+
+      {isHeld && (
+        <div className="space-y-2 pt-1">
+          <div className="p-2.5 rounded bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-rose-900 dark:text-rose-200 space-y-1">
+            <div className="flex items-center gap-1.5 font-bold font-mono text-xs text-rose-800 dark:text-rose-300">
+              <TriangleAlert className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+              <span>DOUBLE_SALE</span>
+            </div>
+            <p className="text-[11px] leading-relaxed">
+              {bn
+                ? `DOUBLE_SALE: এই পার্সেলের জন্য ইতিমধ্যে অন্য একটি সক্রিয় হস্তান্তর (${conflictId || 'বিদ্যমান'}) রয়েছে।`
+                : `DOUBLE_SALE: another active transfer exists for this parcel (${conflictId || 'active transfer'}).`}
+            </p>
+          </div>
+          {result.findings && result.findings.length > 0 && (
+            <div className="pt-1">
+              <ConflictAlert findings={result.findings} />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function DemoPage() {
   const router = useRouter();
   const { t, language } = useLanguage();
@@ -38,11 +119,13 @@ export default function DemoPage() {
   const [resetting, setResetting] = useState(false);
   const [resetStatus, setResetStatus] = useState<ButtonStatus>('idle');
   const [stepStatus, setStepStatus] = useState<Record<string, ButtonStatus>>({});
+  const [stepEvaluations, setStepEvaluations] = useState<Record<string, StepEvaluation>>({});
   const [statusLog, setStatusLog] = useState<string[]>([]);
   const [, setParcels] = useState<any[]>([]);
 
   // Concurrent Race Test State
   const [concurrentState, setConcurrentState] = useState<ButtonStatus>('idle');
+  const [raceWarning, setRaceWarning] = useState<string | null>(null);
   const [concurrentResults, setConcurrentResults] = useState<{
     karim: ConcurrentResult | null;
     hasan: ConcurrentResult | null;
@@ -86,9 +169,11 @@ export default function DemoPage() {
       if (res.ok) {
         setResetStatus('success');
         setStepStatus({});
+        setStepEvaluations({});
         setStatusLog([]);
         setConcurrentState('idle');
         setConcurrentResults(null);
+        setRaceWarning(null);
         await fetchParcels();
         addLog(
           bn
@@ -116,40 +201,95 @@ export default function DemoPage() {
     }
   };
 
-  // Concurrent Conflict Test: Fire Karim and Hasan simultaneously
+  // Concurrent Conflict Test: Fire Karim and Hasan simultaneously on P-003
   const runConcurrentConflictTest = async () => {
     setConcurrentState('loading');
     setConcurrentResults(null);
+    setRaceWarning(null);
+
+    // 1. Pre-check: GET /api/transfers?parcel_id=P-003
+    try {
+      const checkRes = await fetch('/api/transfers?parcel_id=P-003');
+      const checkData = await checkRes.json();
+      const activeStatuses = ['verified', 'under_review', 'approved'];
+      const activeTransfer = checkData.transfers?.find((t: any) =>
+        activeStatuses.includes(t.status)
+      );
+
+      if (activeTransfer) {
+        const warnMsg = bn
+          ? 'পার্সেল P-003 এ ইতিমধ্যে একটি সক্রিয় হস্তান্তর রয়েছে। প্রথমে রিসেট করুন।'
+          : 'Parcel P-003 already has an active transfer. Press Reset first.';
+        setRaceWarning(warnMsg);
+        setConcurrentState('idle');
+        addLog(`[WARN] ${warnMsg}`);
+        return;
+      }
+    } catch (err: any) {
+      setConcurrentState('error');
+      addLog(
+        bn
+          ? `[ERROR] P-003 সক্রিয় হস্তান্তর পরীক্ষা ব্যর্থ: ${err.message}`
+          : `[ERROR] P-003 active transfer pre-check failed: ${err.message}`
+      );
+      return;
+    }
+
     addLog(
       bn
-        ? '[CONCURRENT] কনকারেন্সি পরীক্ষা শুরু: P-001 এর জন্য একসাথে ২টি আবেদন পাঠানো হচ্ছে (করিম ও হাসান)...'
-        : '[CONCURRENT] Firing two conflicting transfer requests concurrently for parcel P-001 (Karim vs Hasan)...'
+        ? '[CONCURRENT] কনকারেন্সি পরীক্ষা শুরু: P-003 এর জন্য একসাথে ২টি আবেদন পাঠানো হচ্ছে (করিম ও হাসান)...'
+        : '[CONCURRENT] Firing two conflicting transfer requests concurrently for parcel P-003 (Karim vs Hasan)...'
     );
 
+    const p003 = DEMO_PARCELS.find((p) => p.id === 'P-003') || {
+      id: 'P-003',
+      mouza: 'Mirpur-104',
+      khatian: 'K-703',
+      dag: 'D-3003',
+      area_decimal: '3.25',
+      current_owner_name: 'Nasima Akter',
+      current_owner_nid: 'NID-DEMO-0005',
+    };
+    const today = new Date().toISOString().slice(0, 10);
+    const rand1 = Math.floor(100000 + Math.random() * 900000);
+    const rand2 = Math.floor(100000 + Math.random() * 900000);
+    const deed1 = `DEED-RACE-${rand1}`;
+    const deed2 = `DEED-RACE-${rand2}`;
+
     const karimBody = {
-      parcel_id: 'P-001',
-      deed_number: 'DEED-2026-001',
-      seller_name: 'Rahim Uddin',
-      seller_nid: 'NID-DEMO-0001',
+      parcel_id: p003.id,
+      deed_number: deed1,
+      seller_name: p003.current_owner_name,
+      seller_nid: p003.current_owner_nid,
       buyer_name: 'Karim Chowdhury',
       buyer_nid: 'NID-DEMO-0002',
-      application_mouza: 'Dhanmondi-102',
-      application_khatian: 'K-501',
-      application_dag: 'D-1001',
-      application_area_decimal: '5.00',
+      application_mouza: p003.mouza,
+      application_khatian: p003.khatian,
+      application_dag: p003.dag,
+      application_area_decimal: p003.area_decimal,
+      deed_mouza: p003.mouza,
+      deed_khatian: p003.khatian,
+      deed_dag: p003.dag,
+      deed_area_decimal: p003.area_decimal,
+      deed_date: today,
     };
 
     const hasanBody = {
-      parcel_id: 'P-001',
-      deed_number: 'DEED-2026-002',
-      seller_name: 'Rahim Uddin',
-      seller_nid: 'NID-DEMO-0001',
+      parcel_id: p003.id,
+      deed_number: deed2,
+      seller_name: p003.current_owner_name,
+      seller_nid: p003.current_owner_nid,
       buyer_name: 'Hasan Mahmud',
       buyer_nid: 'NID-DEMO-0003',
-      application_mouza: 'Dhanmondi-102',
-      application_khatian: 'K-501',
-      application_dag: 'D-1001',
-      application_area_decimal: '5.00',
+      application_mouza: p003.mouza,
+      application_khatian: p003.khatian,
+      application_dag: p003.dag,
+      application_area_decimal: p003.area_decimal,
+      deed_mouza: p003.mouza,
+      deed_khatian: p003.khatian,
+      deed_dag: p003.dag,
+      deed_area_decimal: p003.area_decimal,
+      deed_date: today,
     };
 
     try {
@@ -171,7 +311,7 @@ export default function DemoPage() {
 
       const karimParsed: ConcurrentResult = {
         buyer_name: 'Karim Chowdhury',
-        deed_number: 'DEED-2026-001',
+        deed_number: deed1,
         transfer_id: dataKarim.transfer_id,
         status: dataKarim.status,
         findings: dataKarim.findings,
@@ -180,7 +320,7 @@ export default function DemoPage() {
 
       const hasanParsed: ConcurrentResult = {
         buyer_name: 'Hasan Mahmud',
-        deed_number: 'DEED-2026-002',
+        deed_number: deed2,
         transfer_id: dataHasan.transfer_id,
         status: dataHasan.status,
         findings: dataHasan.findings,
@@ -192,19 +332,37 @@ export default function DemoPage() {
         hasan: hasanParsed,
       });
 
-      setConcurrentState('success');
-      addLog(
-        bn
-          ? `[CONCURRENT] ফলাফল: করিম (${karimParsed.transfer_id || 'ত্রুটি'}) -> স্ট্যাটাস "${karimParsed.status || 'ব্যর্থ'}", হাসান (${hasanParsed.transfer_id || 'ত্রুটি'}) -> স্ট্যাটাস "${hasanParsed.status || 'ব্যর্থ'}"`
-          : `[CONCURRENT] Result: Karim (${karimParsed.transfer_id || 'err'}) -> status "${karimParsed.status || 'failed'}", Hasan (${hasanParsed.transfer_id || 'err'}) -> status "${hasanParsed.status || 'failed'}"`
+      const outcome = evaluateStepOutcome(
+        'race',
+        { karim: karimParsed, hasan: hasanParsed },
+        bn ? 'bn' : 'en'
       );
+      setStepEvaluations((prev) => ({ ...prev, race: outcome }));
+
+      if (outcome.ok) {
+        setConcurrentState('success');
+        addLog(
+          bn
+            ? `[CONCURRENT] ফলাফল: করিম (${karimParsed.transfer_id || 'ত্রুটি'}) -> স্ট্যাটাস "${karimParsed.status || 'ব্যর্থ'}", হাসান (${hasanParsed.transfer_id || 'ত্রুটি'}) -> স্ট্যাটাস "${hasanParsed.status || 'ব্যর্থ'}". ${outcome.message}`
+            : `[CONCURRENT] Result: Karim (${karimParsed.transfer_id || 'err'}) -> status "${karimParsed.status || 'failed'}", Hasan (${hasanParsed.transfer_id || 'err'}) -> status "${hasanParsed.status || 'failed'}". ${outcome.message}`
+        );
+      } else {
+        setConcurrentState('error');
+        addLog(
+          bn
+            ? `[WARN] কনকারেন্সি পরীক্ষা: অপ্রত্যাশিত ফলাফল - ${outcome.message}`
+            : `[WARN] Concurrency test: Unexpected result - ${outcome.message}`
+        );
+      }
       await fetchParcels();
     } catch (err: any) {
       setConcurrentState('error');
+      const outcome = evaluateStepOutcome('race', { error: err.message }, bn ? 'bn' : 'en');
+      setStepEvaluations((prev) => ({ ...prev, race: outcome }));
       addLog(
         bn
-          ? `[ERROR] কনকারেন্সি পরীক্ষা ব্যর্থ হয়েছে: ${err.message}`
-          : `[ERROR] Concurrency test failed: ${err.message}`
+          ? `[WARN] কনকারেন্সি পরীক্ষা: অপ্রত্যাশিত ফলাফল - ${err.message}`
+          : `[WARN] Concurrency test: Unexpected result - ${err.message}`
       );
     }
   };
@@ -235,7 +393,14 @@ export default function DemoPage() {
         }),
       });
       const data = await res.json();
-      if (res.ok) {
+      const outcome = evaluateStepOutcome(
+        'step1',
+        res.ok ? data : { error: data.error || 'Request failed' },
+        bn ? 'bn' : 'en'
+      );
+      setStepEvaluations((prev) => ({ ...prev, step1: outcome }));
+
+      if (outcome.ok) {
         setSingleStepStatus('step1', 'success');
         addLog(
           bn
@@ -247,16 +412,18 @@ export default function DemoPage() {
         setSingleStepStatus('step1', 'error');
         addLog(
           bn
-            ? `[ERROR] ধাপ ১ ত্রুটি: ${data.error}`
-            : `[ERROR] Step 1 Error: ${data.error}`
+            ? `[WARN] ধাপ ১: অপ্রত্যাশিত ফলাফল - ${outcome.message}`
+            : `[WARN] Step 1: Unexpected result - ${outcome.message}`
         );
       }
     } catch (err: any) {
+      const outcome = evaluateStepOutcome('step1', { error: err.message }, bn ? 'bn' : 'en');
+      setStepEvaluations((prev) => ({ ...prev, step1: outcome }));
       setSingleStepStatus('step1', 'error');
       addLog(
         bn
-          ? `[ERROR] ধাপ ১ ত্রুটি: ${err.message}`
-          : `[ERROR] Step 1 Error: ${err.message}`
+          ? `[WARN] ধাপ ১: অপ্রত্যাশিত ফলাফল - ${outcome.message}`
+          : `[WARN] Step 1: Unexpected result - ${outcome.message}`
       );
     }
   };
@@ -287,7 +454,14 @@ export default function DemoPage() {
         }),
       });
       const data = await res.json();
-      if (res.ok) {
+      const outcome = evaluateStepOutcome(
+        'step2',
+        res.ok ? data : { error: data.error || 'Request failed' },
+        bn ? 'bn' : 'en'
+      );
+      setStepEvaluations((prev) => ({ ...prev, step2: outcome }));
+
+      if (outcome.ok) {
         setSingleStepStatus('step2', 'success');
         addLog(
           bn
@@ -298,16 +472,18 @@ export default function DemoPage() {
         setSingleStepStatus('step2', 'error');
         addLog(
           bn
-            ? `[ERROR] ধাপ ২ ত্রুটি: ${data.error}`
-            : `[ERROR] Step 2 Error: ${data.error}`
+            ? `[WARN] ধাপ ২: অপ্রত্যাশিত ফলাফল - ${outcome.message}`
+            : `[WARN] Step 2: Unexpected result - ${outcome.message}`
         );
       }
     } catch (err: any) {
+      const outcome = evaluateStepOutcome('step2', { error: err.message }, bn ? 'bn' : 'en');
+      setStepEvaluations((prev) => ({ ...prev, step2: outcome }));
       setSingleStepStatus('step2', 'error');
       addLog(
         bn
-          ? `[ERROR] ধাপ ২ ত্রুটি: ${err.message}`
-          : `[ERROR] Step 2 Error: ${err.message}`
+          ? `[WARN] ধাপ ২: অপ্রত্যাশিত ফলাফল - ${outcome.message}`
+          : `[WARN] Step 2: Unexpected result - ${outcome.message}`
       );
     }
   };
@@ -330,11 +506,22 @@ export default function DemoPage() {
           t.buyer_name === 'Karim Chowdhury' && ['verified', 'under_review', 'approved'].includes(t.status)
       );
       if (!karimTr) {
+        const outcome = evaluateStepOutcome(
+          'step3',
+          {
+            success: false,
+            error: bn
+              ? 'করিম চৌধুরীর আবেদন পাওয়া যায়নি। অনুগ্রহ করে প্রথমে ধাপ ১ সম্পন্ন করুন।'
+              : 'Karim transfer not found. Please run Step 1 first.',
+          },
+          bn ? 'bn' : 'en'
+        );
+        setStepEvaluations((prev) => ({ ...prev, step3: outcome }));
         setSingleStepStatus('step3', 'error');
         addLog(
           bn
-            ? '[ERROR] করিম চৌধুরীর আবেদন পাওয়া যায়নি। অনুগ্রহ করে প্রথমে ধাপ ১ সম্পন্ন করুন।'
-            : '[ERROR] Karim transfer not found. Please run Step 1 first.'
+            ? `[WARN] ধাপ ৩: অপ্রত্যাশিত ফলাফল - ${outcome.message}`
+            : `[WARN] Step 3: Unexpected result - ${outcome.message}`
         );
         return;
       }
@@ -358,28 +545,64 @@ export default function DemoPage() {
         finData = await finRes.json();
         if (!finRes.ok) break;
       }
+
       if (finRes.ok) {
-        setSingleStepStatus('step3', 'success');
-        addLog(
-          bn
-            ? '[FINALIZED] ধাপ ৩ নিষ্পত্তি সম্পন্ন: করিম চৌধুরী এখন P-001 এর বৈধ নিবন্ধিত মালিক। রেজিস্ট্রি ও মালিকানা ইতিহাস আপডেট হয়েছে।'
-            : '[FINALIZED] Step 3 Finalization Complete: Karim is now legal owner of P-001. Registry and ownership history atomically updated.'
-        );
         await fetchParcels();
+        const parcelsRes = await fetch('/api/parcels');
+        const parcelsData = await parcelsRes.json();
+        const p001 = parcelsData.parcels?.find((p: any) => p.id === 'P-001');
+
+        const outcome = evaluateStepOutcome(
+          'step3',
+          {
+            success: true,
+            new_owner: finData?.new_owner || p001?.current_owner_name,
+            parcel: p001,
+          },
+          bn ? 'bn' : 'en'
+        );
+        setStepEvaluations((prev) => ({ ...prev, step3: outcome }));
+
+        if (outcome.ok) {
+          setSingleStepStatus('step3', 'success');
+          addLog(
+            bn
+              ? '[FINALIZED] ধাপ ৩ নিষ্পত্তি সম্পন্ন: করিম চৌধুরী এখন P-001 এর বৈধ নিবন্ধিত মালিক। রেজিস্ট্রি ও মালিকানা ইতিহাস আপডেট হয়েছে।'
+              : '[FINALIZED] Step 3 Finalization Complete: Karim is now legal owner of P-001. Registry and ownership history atomically updated.'
+          );
+        } else {
+          setSingleStepStatus('step3', 'error');
+          addLog(
+            bn
+              ? `[WARN] ধাপ ৩: অপ্রত্যাশিত ফলাফল - ${outcome.message}`
+              : `[WARN] Step 3: Unexpected result - ${outcome.message}`
+          );
+        }
       } else {
+        const outcome = evaluateStepOutcome(
+          'step3',
+          {
+            success: false,
+            error: finData?.error || 'Finalization failed',
+          },
+          bn ? 'bn' : 'en'
+        );
+        setStepEvaluations((prev) => ({ ...prev, step3: outcome }));
         setSingleStepStatus('step3', 'error');
         addLog(
           bn
-            ? `[ERROR] চূড়ান্ত নিষ্পত্তি ত্রুটি: ${finData.error}`
-            : `[ERROR] Finalization Error: ${finData.error}`
+            ? `[WARN] ধাপ ৩: অপ্রত্যাশিত ফলাফল - ${outcome.message}`
+            : `[WARN] Step 3: Unexpected result - ${outcome.message}`
         );
       }
     } catch (err: any) {
+      const outcome = evaluateStepOutcome('step3', { success: false, error: err.message }, bn ? 'bn' : 'en');
+      setStepEvaluations((prev) => ({ ...prev, step3: outcome }));
       setSingleStepStatus('step3', 'error');
       addLog(
         bn
-          ? `[ERROR] চূড়ান্ত নিষ্পত্তি ত্রুটি: ${err.message}`
-          : `[ERROR] Finalization Error: ${err.message}`
+          ? `[WARN] ধাপ ৩: অপ্রত্যাশিত ফলাফল - ${outcome.message}`
+          : `[WARN] Step 3: Unexpected result - ${outcome.message}`
       );
     }
   };
@@ -410,7 +633,14 @@ export default function DemoPage() {
         }),
       });
       const data = await res.json();
-      if (res.ok) {
+      const outcome = evaluateStepOutcome(
+        'step4',
+        res.ok ? data : { error: data.error || 'Request failed' },
+        bn ? 'bn' : 'en'
+      );
+      setStepEvaluations((prev) => ({ ...prev, step4: outcome }));
+
+      if (outcome.ok) {
         setSingleStepStatus('step4', 'success');
         addLog(
           bn
@@ -421,16 +651,18 @@ export default function DemoPage() {
         setSingleStepStatus('step4', 'error');
         addLog(
           bn
-            ? `[ERROR] ধাপ ৪ ত্রুটি: ${data.error}`
-            : `[ERROR] Step 4 Error: ${data.error}`
+            ? `[WARN] ধাপ ৪: অপ্রত্যাশিত ফলাফল - ${outcome.message}`
+            : `[WARN] Step 4: Unexpected result - ${outcome.message}`
         );
       }
     } catch (err: any) {
+      const outcome = evaluateStepOutcome('step4', { error: err.message }, bn ? 'bn' : 'en');
+      setStepEvaluations((prev) => ({ ...prev, step4: outcome }));
       setSingleStepStatus('step4', 'error');
       addLog(
         bn
-          ? `[ERROR] ধাপ ৪ ত্রুটি: ${err.message}`
-          : `[ERROR] Step 4 Error: ${err.message}`
+          ? `[WARN] ধাপ ৪: অপ্রত্যাশিত ফলাফল - ${outcome.message}`
+          : `[WARN] Step 4: Unexpected result - ${outcome.message}`
       );
     }
   };
@@ -461,7 +693,14 @@ export default function DemoPage() {
         }),
       });
       const data = await res.json();
-      if (res.ok) {
+      const outcome = evaluateStepOutcome(
+        'step5',
+        res.ok ? data : { error: data.error || 'Request failed' },
+        bn ? 'bn' : 'en'
+      );
+      setStepEvaluations((prev) => ({ ...prev, step5: outcome }));
+
+      if (outcome.ok) {
         setSingleStepStatus('step5', 'success');
         addLog(
           bn
@@ -472,22 +711,24 @@ export default function DemoPage() {
         setSingleStepStatus('step5', 'error');
         addLog(
           bn
-            ? `[ERROR] ধাপ ৫ ত্রুটি: ${data.error}`
-            : `[ERROR] Step 5 Error: ${data.error}`
+            ? `[WARN] ধাপ ৫: অপ্রত্যাশিত ফলাফল - ${outcome.message}`
+            : `[WARN] Step 5: Unexpected result - ${outcome.message}`
         );
       }
     } catch (err: any) {
+      const outcome = evaluateStepOutcome('step5', { error: err.message }, bn ? 'bn' : 'en');
+      setStepEvaluations((prev) => ({ ...prev, step5: outcome }));
       setSingleStepStatus('step5', 'error');
       addLog(
         bn
-          ? `[ERROR] ধাপ ৫ ত্রুটি: ${err.message}`
-          : `[ERROR] Step 5 Error: ${err.message}`
+          ? `[WARN] ধাপ ৫: অপ্রত্যাশিত ফলাফল - ${outcome.message}`
+          : `[WARN] Step 5: Unexpected result - ${outcome.message}`
       );
     }
   };
 
   // Status line helper with icon + text (never color alone)
-  const renderStepStatus = (status: ButtonStatus) => {
+  const renderStepStatus = (stepKey: string, status: ButtonStatus) => {
     if (status === 'loading') {
       return (
         <span className="inline-flex items-center gap-1 text-slate-500 font-medium">
@@ -496,6 +737,25 @@ export default function DemoPage() {
         </span>
       );
     }
+
+    const evalResult = stepEvaluations[stepKey];
+    if (evalResult) {
+      if (evalResult.ok) {
+        return (
+          <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400 font-medium">
+            <Check className="w-3.5 h-3.5" strokeWidth={2} aria-hidden="true" />
+            <span>{bn ? 'প্রত্যাশিত অনুযায়ী' : 'As expected'}</span>
+          </span>
+        );
+      }
+      return (
+        <span className="inline-flex items-center gap-1 text-rose-700 dark:text-rose-400 font-medium">
+          <TriangleAlert className="w-3.5 h-3.5" strokeWidth={1.75} aria-hidden="true" />
+          <span>{bn ? 'অপ্রত্যাশিত ফলাফল' : 'Unexpected result'}</span>
+        </span>
+      );
+    }
+
     if (status === 'success') {
       return (
         <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400 font-medium">
@@ -516,6 +776,39 @@ export default function DemoPage() {
       <span className="text-slate-400 text-[11px]">
         {bn ? 'অপেক্ষমাণ' : 'Pending'}
       </span>
+    );
+  };
+
+  const renderEvaluationDetails = (stepKey: string) => {
+    const evalResult = stepEvaluations[stepKey];
+    if (!evalResult) return null;
+
+    if (evalResult.ok) {
+      return (
+        <div className="mt-1 flex items-center gap-1.5 text-xs text-emerald-800 dark:text-emerald-300">
+          <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" strokeWidth={2} aria-hidden="true" />
+          <span className="font-semibold">{bn ? 'প্রত্যাশিত অনুযায়ী:' : 'As expected:'}</span>
+          <span className="text-[11px] text-slate-600 dark:text-slate-300">{evalResult.message}</span>
+        </div>
+      );
+    }
+
+    return (
+      <div className="mt-2 p-2.5 rounded-md bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-rose-800 dark:text-rose-300 flex items-start gap-2 text-xs">
+        <TriangleAlert className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" strokeWidth={1.75} aria-hidden="true" />
+        <div className="space-y-0.5">
+          <div className="font-semibold flex items-center gap-1.5">
+            <span>{bn ? 'অপ্রত্যাশিত ফলাফল' : 'Unexpected result'}</span>
+            <span className="text-slate-400 font-normal">·</span>
+            <span className="font-normal text-[11px] text-slate-700 dark:text-slate-300">{evalResult.message}</span>
+          </div>
+          <p className="text-[11px] text-rose-700 dark:text-rose-400 font-medium">
+            {bn
+              ? 'ডেমো ডেটা রিসেট করুন, তারপর আবার ধাপ ১ থেকে শুরু করুন।'
+              : 'Press Reset demo data, then start again from Step 1.'}
+          </p>
+        </div>
+      </div>
     );
   };
 
@@ -577,12 +870,14 @@ export default function DemoPage() {
                 <Zap className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" strokeWidth={1.75} aria-hidden="true" />
                 <h3 className="font-bold text-sm text-slate-900 dark:text-white">
                   {bn
-                    ? 'কনকারেন্সি পরীক্ষা: একসাথে দুটি সংঘাতপূর্ণ অনুরোধ'
-                    : 'Concurrency Test: Simultaneous Conflicting Submissions'}
+                    ? 'কনকারেন্সি পরীক্ষা: একসাথে দুটি সংঘাতপূর্ণ অনুরোধ (P-003)'
+                    : 'Concurrency Test: Simultaneous Conflicting Submissions (P-003)'}
                 </h3>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                {t('demo_concurrent_hint')}
+                {bn
+                  ? 'এই পরীক্ষাটি নিজস্ব পার্সেল (P-003) ব্যবহার করে এবং P-003 এ কোনো সক্রিয় হস্তান্তর না থাকা পর্যন্ত যেকোনো সময় চালানো যেতে পারে।'
+                  : 'Uses its own parcel (P-003) and can be run at any time while P-003 has no active transfer.'}
               </p>
             </div>
 
@@ -600,75 +895,75 @@ export default function DemoPage() {
             </Button>
           </div>
 
+          {/* Active transfer warning if P-003 is already occupied */}
+          {raceWarning && (
+            <div className="p-3 rounded-md bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-200 flex items-center gap-2 text-xs">
+              <TriangleAlert className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+              <span>{raceWarning}</span>
+            </div>
+          )}
+
           {/* Side-by-Side Results: Active vs Held */}
           {concurrentResults && (
             <div className="space-y-3 pt-1">
-              <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                {bn ? 'পাশাপাশি ফলাফল তুলনা:' : 'Side-by-Side Results:'}
-              </h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                {/* Result 1: Karim */}
-                <div className="p-4 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 space-y-2">
-                  <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
-                    <div>
-                      <span className="font-bold text-slate-900 dark:text-white block">
-                        {bn ? 'অনুরোধ ১: করিম চৌধুরী' : 'Request 1: Karim Chowdhury'}
-                      </span>
-                      <span className="font-mono text-[11px] text-slate-500">
-                        {concurrentResults.karim?.deed_number} • NID-DEMO-0002
-                      </span>
-                    </div>
-                    {concurrentResults.karim?.status && (
-                      <StatusBadge status={concurrentResults.karim.status} size="sm" />
-                    )}
-                  </div>
-                  {concurrentResults.karim?.transfer_id && (
-                    <p className="font-mono text-emerald-700 dark:text-emerald-400 font-semibold">
-                      ID: {concurrentResults.karim.transfer_id}
-                    </p>
-                  )}
-                  {concurrentResults.karim?.status === 'verified' && (
-                    <p className="text-[11px] text-emerald-800 dark:text-emerald-300">
-                      {bn
-                        ? 'লক আগে পেয়ে সক্রিয় যাচাইকৃত আবেদন হিসেবে গৃহীত হয়েছে।'
-                        : 'Acquired write lock first and recorded as active verified transfer.'}
-                    </p>
-                  )}
-                </div>
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                  {bn ? 'পাশাপাশি ফলাফল তুলনা:' : 'Side-by-Side Results:'}
+                </h4>
+                {stepEvaluations['race'] && (
+                  stepEvaluations['race'].ok ? (
+                    <span className="inline-flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-400 font-medium">
+                      <Check className="w-3.5 h-3.5" strokeWidth={2} aria-hidden="true" />
+                      <span>{bn ? 'প্রত্যাশিত অনুযায়ী' : 'As expected'}</span>
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-xs text-rose-700 dark:text-rose-400 font-medium">
+                      <TriangleAlert className="w-3.5 h-3.5" strokeWidth={1.75} aria-hidden="true" />
+                      <span>{bn ? 'অপ্রত্যাশিত ফলাফল' : 'Unexpected result'}</span>
+                    </span>
+                  )
+                )}
+              </div>
 
-                {/* Result 2: Hasan */}
-                <div className="p-4 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 space-y-2">
-                  <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
-                    <div>
-                      <span className="font-bold text-slate-900 dark:text-white block">
-                        {bn ? 'অনুরোধ ২: হাসান মাহমুদ' : 'Request 2: Hasan Mahmud'}
-                      </span>
-                      <span className="font-mono text-[11px] text-slate-500">
-                        {concurrentResults.hasan?.deed_number} • NID-DEMO-0003
-                      </span>
+              {stepEvaluations['race'] && !stepEvaluations['race'].ok && (
+                <div className="p-3 rounded-md bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-rose-800 dark:text-rose-300 flex items-start gap-2 text-xs">
+                  <TriangleAlert className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" strokeWidth={1.75} aria-hidden="true" />
+                  <div className="space-y-0.5">
+                    <div className="font-semibold flex items-center gap-1.5">
+                      <span>{bn ? 'অপ্রত্যাশিত ফলাফল' : 'Unexpected result'}</span>
+                      <span className="text-slate-400 font-normal">·</span>
+                      <span className="font-normal text-[11px] text-slate-700 dark:text-slate-300">{stepEvaluations['race'].message}</span>
                     </div>
-                    {concurrentResults.hasan?.status && (
-                      <StatusBadge status={concurrentResults.hasan.status} size="sm" />
-                    )}
-                  </div>
-                  {concurrentResults.hasan?.transfer_id && (
-                    <p className="font-mono text-amber-700 dark:text-amber-400 font-semibold">
-                      ID: {concurrentResults.hasan.transfer_id}
-                    </p>
-                  )}
-                  {concurrentResults.hasan?.status === 'held' && (
-                    <p className="text-[11px] text-amber-800 dark:text-amber-300">
+                    <p className="text-[11px] text-rose-700 dark:text-rose-400 font-medium">
                       {bn
-                        ? 'একই প্লটে পূর্বে সক্রিয় আবেদন থাকায় স্বয়ংক্রিয়ভাবে স্থগিত (held) করা হয়েছে।'
-                        : 'DOUBLE_SALE rule caught the conflicting claim and held the application.'}
+                        ? 'ডেমো ডেটা রিসেট করুন, তারপর আবার ধাপ ১ থেকে শুরু করুন।'
+                        : 'Press Reset demo data, then start again from Step 1.'}
                     </p>
-                  )}
-                  {concurrentResults.hasan?.findings && (
-                    <div className="pt-2">
-                      <ConflictAlert findings={concurrentResults.hasan.findings} />
-                    </div>
-                  )}
+                  </div>
                 </div>
+              )}
+
+              {stepEvaluations['race'] && stepEvaluations['race'].ok && (
+                <div className="p-2.5 rounded-md bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 flex items-center gap-2 text-xs">
+                  <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" strokeWidth={2} aria-hidden="true" />
+                  <span className="font-semibold">{bn ? 'প্রত্যাশিত অনুযায়ী:' : 'As expected:'}</span>
+                  <span className="text-[11px] text-slate-600 dark:text-slate-300">{stepEvaluations['race'].message}</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                <ConcurrentResultCard
+                  title={bn ? 'অনুরোধ ১: করিম চৌধুরী' : 'Request 1: Karim Chowdhury'}
+                  buyerNid="NID-DEMO-0002"
+                  result={concurrentResults.karim}
+                  bn={bn}
+                />
+                <ConcurrentResultCard
+                  title={bn ? 'অনুরোধ ২: হাসান মাহমুদ' : 'Request 2: Hasan Mahmud'}
+                  buyerNid="NID-DEMO-0003"
+                  result={concurrentResults.hasan}
+                  bn={bn}
+                />
               </div>
             </div>
           )}
@@ -684,13 +979,14 @@ export default function DemoPage() {
                   {bn ? '১. রহিম → করিম (সঠিক হস্তান্তর)' : '1. Rahim → Karim (Clean Transfer)'}
                 </span>
                 <span className="text-slate-400">·</span>
-                {renderStepStatus(stepStatus['step1'] || 'idle')}
+                {renderStepStatus('step1', stepStatus['step1'] || 'idle')}
               </div>
               <p className="text-slate-500">
                 {bn
                   ? 'প্রাথমিক দাখিল সমস্ত যাচাইকরণ উত্তীর্ণ হয়ে "যাচাইকৃত" সক্রিয় অবস্থায় প্রবেশ করে।'
                   : 'Initial submission passes all checks and enters "verified" active state.'}
               </p>
+              {renderEvaluationDetails('step1')}
             </div>
             <Button
               variant="secondary"
@@ -712,13 +1008,19 @@ export default function DemoPage() {
                   {bn ? '২. রহিম → হাসান (দ্বৈত হস্তান্তর)' : '2. Rahim → Hasan (Double Sale)'}
                 </span>
                 <span className="text-slate-400">·</span>
-                {renderStepStatus(stepStatus['step2'] || 'idle')}
+                {renderStepStatus('step2', stepStatus['step2'] || 'idle')}
               </div>
               <p className="text-slate-500">
                 {bn
                   ? 'P-001 এ সক্রিয় আবেদন থাকায় স্বয়ংক্রিয়ভাবে স্থগিত (held) করা হয়।'
                   : 'Detected and held automatically due to existing active transfer on P-001.'}
               </p>
+              {!stepEvaluations['step1']?.ok && (
+                <p className="text-[11px] text-slate-400 dark:text-slate-500 italic">
+                  {bn ? 'প্রথমে ধাপ ১ সম্পন্ন করুন' : 'Run Step 1 first'}
+                </p>
+              )}
+              {renderEvaluationDetails('step2')}
             </div>
             <Button
               variant="secondary"
@@ -740,13 +1042,19 @@ export default function DemoPage() {
                   {bn ? '৩. করিম চৌধুরীর চূড়ান্ত নিষ্পত্তি' : '3. Finalize Karim Chowdhury'}
                 </span>
                 <span className="text-slate-400">·</span>
-                {renderStepStatus(stepStatus['step3'] || 'idle')}
+                {renderStepStatus('step3', stepStatus['step3'] || 'idle')}
               </div>
               <p className="text-slate-500">
                 {bn
                   ? 'অনুমোদন ও চূড়ান্ত নিষ্পত্তি। মালিকানা করিমে পরিবর্তিত হয় এবং অডিট ব্লক রেকর্ড করে।'
                   : 'Approve and finalize. Updates legal owner to Karim and records audit block.'}
               </p>
+              {!stepEvaluations['step2']?.ok && (
+                <p className="text-[11px] text-slate-400 dark:text-slate-500 italic">
+                  {bn ? 'প্রথমে ধাপ ২ সম্পন্ন করুন' : 'Run Step 2 first'}
+                </p>
+              )}
+              {renderEvaluationDetails('step3')}
             </div>
             <Button
               variant="secondary"
@@ -768,13 +1076,19 @@ export default function DemoPage() {
                   {bn ? '৪. রহিমের পরবর্তী বিক্রয় (অননুমোদিত বিক্রেতা)' : '4. Subsequent Rahim Sale (Wrong Seller)'}
                 </span>
                 <span className="text-slate-400">·</span>
-                {renderStepStatus(stepStatus['step4'] || 'idle')}
+                {renderStepStatus('step4', stepStatus['step4'] || 'idle')}
               </div>
               <p className="text-slate-500">
                 {bn
                   ? 'ব্যর্থ হয় কারণ রহিম আর P-001 এর বৈধ নিবন্ধিত মালিক নন।'
                   : 'Fails because Rahim is no longer recorded owner of P-001.'}
               </p>
+              {!stepEvaluations['step3']?.ok && (
+                <p className="text-[11px] text-slate-400 dark:text-slate-500 italic">
+                  {bn ? 'প্রথমে ধাপ ৩ সম্পন্ন করুন' : 'Run Step 3 first'}
+                </p>
+              )}
+              {renderEvaluationDetails('step4')}
             </div>
             <Button
               variant="secondary"
@@ -796,13 +1110,19 @@ export default function DemoPage() {
                   {bn ? '৫. P-002 রেকর্ডের অমিল ডেমো' : '5. Record Mismatch Demo on P-002'}
                 </span>
                 <span className="text-slate-400">·</span>
-                {renderStepStatus(stepStatus['step5'] || 'idle')}
+                {renderStepStatus('step5', stepStatus['step5'] || 'idle')}
               </div>
               <p className="text-slate-500">
                 {bn
                   ? 'ভুল দাগ ও পরিমাণের আবেদন দাখিল। সকল অসঙ্গতি স্পষ্টভাবে প্রদর্শন করে।'
                   : 'Submits mismatched Dag & Area. Reports all differing fields cleanly.'}
               </p>
+              {!stepEvaluations['step4']?.ok && (
+                <p className="text-[11px] text-slate-400 dark:text-slate-500 italic">
+                  {bn ? 'প্রথমে ধাপ ৪ সম্পন্ন করুন' : 'Run Step 4 first'}
+                </p>
+              )}
+              {renderEvaluationDetails('step5')}
             </div>
             <Button
               variant="secondary"
