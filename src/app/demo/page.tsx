@@ -51,6 +51,9 @@ function ConcurrentResultCard({
     doubleSaleFinding?.evidence?.conflict_id ||
     doubleSaleFinding?.observed?.active_transfer_id ||
     '';
+  const ruleIds = Array.from(
+    new Set((result.findings || []).map((f) => f.rule_id).filter(Boolean))
+  );
 
   return (
     <div className="p-4 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 space-y-2">
@@ -89,21 +92,31 @@ function ConcurrentResultCard({
 
       {isHeld && (
         <div className="space-y-2 pt-1">
-          <div className="p-2.5 rounded bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-rose-900 dark:text-rose-200 space-y-1">
-            <div className="flex items-center gap-1.5 font-bold font-mono text-xs text-rose-800 dark:text-rose-300">
-              <TriangleAlert className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
-              <span>DOUBLE_SALE</span>
-            </div>
-            <p className="text-[11px] leading-relaxed">
-              {bn
-                ? `DOUBLE_SALE: এই পার্সেলের জন্য ইতিমধ্যে অন্য একটি সক্রিয় হস্তান্তর (${conflictId || 'বিদ্যমান'}) রয়েছে।`
-                : `DOUBLE_SALE: another active transfer exists for this parcel (${conflictId || 'active transfer'}).`}
-            </p>
+          <div className="p-2.5 rounded bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-rose-900 dark:text-rose-200 flex items-start gap-1.5">
+            <TriangleAlert className="w-3.5 h-3.5 shrink-0 mt-0.5 text-rose-600 dark:text-rose-400" strokeWidth={1.75} aria-hidden="true" />
+            {doubleSaleFinding ? (
+              <p className="text-[11px] leading-relaxed">
+                {bn
+                  ? `DOUBLE_SALE: এই পার্সেলের জন্য ইতিমধ্যে অন্য একটি সক্রিয় হস্তান্তর (${conflictId || 'বিদ্যমান'}) রয়েছে।`
+                  : `DOUBLE_SALE: another active transfer exists for this parcel (${conflictId || 'active transfer'}).`}
+              </p>
+            ) : (
+              <p className="text-[11px] leading-relaxed font-mono">
+                {ruleIds.length > 0
+                  ? (bn ? `স্থগিত: ${ruleIds.join(', ')}` : `Held: ${ruleIds.join(', ')}`)
+                  : (bn ? 'স্থগিত' : 'Held')}
+              </p>
+            )}
           </div>
           {result.findings && result.findings.length > 0 && (
-            <div className="pt-1">
-              <ConflictAlert findings={result.findings} />
-            </div>
+            <details className="text-xs group">
+              <summary className="cursor-pointer hover:underline text-slate-600 dark:text-slate-400 font-medium select-none">
+                {bn ? 'প্রমাণ দেখুন' : 'Show evidence'}
+              </summary>
+              <div className="pt-2">
+                <ConflictAlert findings={result.findings} />
+              </div>
+            </details>
           )}
         </div>
       )}
@@ -1117,11 +1130,9 @@ export default function DemoPage() {
                   ? 'ভুল দাগ ও পরিমাণের আবেদন দাখিল। সকল অসঙ্গতি স্পষ্টভাবে প্রদর্শন করে।'
                   : 'Submits mismatched Dag & Area. Reports all differing fields cleanly.'}
               </p>
-              {!stepEvaluations['step4']?.ok && (
-                <p className="text-[11px] text-slate-400 dark:text-slate-500 italic">
-                  {bn ? 'প্রথমে ধাপ ৪ সম্পন্ন করুন' : 'Run Step 4 first'}
-                </p>
-              )}
+              <p className="text-[11px] text-slate-400 dark:text-slate-500 italic">
+                {bn ? 'যেকোনো সময় চালানো যাবে' : 'Can be run at any time'}
+              </p>
               {renderEvaluationDetails('step5')}
             </div>
             <Button

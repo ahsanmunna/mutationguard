@@ -112,6 +112,18 @@ describe('Demo Scenarios Evaluator (evaluateStepOutcome)', () => {
       });
       expect(res.ok).toBe(false);
     });
+
+    it('does not append a double full stop when error already ends with a period', () => {
+      const res = evaluateStepOutcome('step3', {
+        success: false,
+        error: 'Karim transfer not found. Please run Step 1 first.',
+      });
+      expect(res.ok).toBe(false);
+      expect(res.message).not.toContain('..');
+      expect(res.message).toBe(
+        'Finalize chain failed: Karim transfer not found. Please run Step 1 first.'
+      );
+    });
   });
 
   describe('Step 4: Wrong Seller (Subsequent Rahim Sale)', () => {
@@ -253,6 +265,40 @@ describe('Demo Scenarios Evaluator (evaluateStepOutcome)', () => {
       });
       expect(res.ok).toBe(false);
       expect(res.message).toContain('Expected exactly two concurrent results');
+    });
+
+    it('fails when response contains only an error string', () => {
+      const res = evaluateStepOutcome('race', {
+        error: 'Database connection failed',
+      });
+      expect(res.ok).toBe(false);
+      expect(res.message).toBe('Request failed: Database connection failed');
+      expect(res.message).not.toContain('Expected exactly two concurrent results');
+
+      const resBn = evaluateStepOutcome(
+        'race',
+        { error: 'ডাটাবেস সংযোগ ব্যর্থ হয়েছে' },
+        'bn'
+      );
+      expect(resBn.ok).toBe(false);
+      expect(resBn.message).toBe('অনুরোধ ব্যর্থ হয়েছে: ডাটাবেস সংযোগ ব্যর্থ হয়েছে');
+      expect(resBn.message).not.toContain('ঠিক ২টি কনকারেন্ট ফলাফল প্রত্যাশিত');
+    });
+
+    it('fails for a two-item response where one item has an error and no status', () => {
+      const res = evaluateStepOutcome('race', {
+        karim: { status: 'verified' },
+        hasan: { error: 'Database transaction error' },
+      });
+      expect(res.ok).toBe(false);
+      expect(res.message).toContain('Unexpected race outcome: 1 verified, 0 held');
+
+      const resArray = evaluateStepOutcome('race', [
+        { status: 'verified' },
+        { error: 'Transaction aborted' },
+      ]);
+      expect(resArray.ok).toBe(false);
+      expect(resArray.message).toContain('Unexpected race outcome: 1 verified, 0 held');
     });
   });
 

@@ -121,11 +121,17 @@ export function evaluateStepOutcome(
       // Expected: finalize chain succeeded and parcel owner is now Karim Chowdhury
       const success = response.success === true || response.ok === true || response.status === 'finalized';
       if (!success) {
+        const rawErr = response.error
+          ? String(response.error).trim()
+          : (isBn ? 'অজানা ত্রুটি' : 'unsuccessful transition');
+        const suffix = isBn
+          ? (rawErr.endsWith('।') || rawErr.endsWith('.') ? '' : '।')
+          : (rawErr.endsWith('.') ? '' : '.');
         return {
           ok: false,
           message: isBn
-            ? `চূড়ান্ত নিষ্পত্তি চেইন ব্যর্থ হয়েছে: ${response.error || 'অজানা ত্রুটি'}।`
-            : `Finalize chain failed: ${response.error || 'unsuccessful transition'}.`,
+            ? `চূড়ান্ত নিষ্পত্তি চেইন ব্যর্থ হয়েছে: ${rawErr}${suffix}`
+            : `Finalize chain failed: ${rawErr}${suffix}`,
         };
       }
       const owner =
@@ -209,6 +215,15 @@ export function evaluateStepOutcome(
     }
 
     case 'race': {
+      if (typeof response.error === 'string') {
+        return {
+          ok: false,
+          message: isBn
+            ? `অনুরোধ ব্যর্থ হয়েছে: ${response.error}`
+            : `Request failed: ${response.error}`,
+        };
+      }
+
       // Expected: race exactly one 'verified' and one 'held' with a DOUBLE_SALE finding
       let items: any[] = [];
       if (Array.isArray(response)) {
