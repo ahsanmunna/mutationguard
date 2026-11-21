@@ -8,6 +8,7 @@ export interface RegistryRecordInput {
   dag?: string;
   area_decimal?: number | string;
   current_owner_name?: string;
+  current_owner_nid?: string;
   [key: string]: any;
 }
 
@@ -21,6 +22,7 @@ export interface DeedRecordInput {
   area_decimal?: number | string;
   deed_area_decimal?: number | string;
   seller_name?: string;
+  seller_nid?: string;
   [key: string]: any;
 }
 
@@ -47,6 +49,8 @@ export interface ComparisonRow {
   deedValue: string;
   applicationValue: string;
   differs: boolean;
+  registrySub?: string;
+  deedSub?: string;
 }
 
 /**
@@ -102,32 +106,37 @@ export function compareRecords(params: {
   const regOwner = String(registry?.current_owner_name ?? '');
   const deedSeller = String(deed?.seller_name ?? '');
 
-  // Mouza comparison
-  const mouzaDiffers =
-    cleanText(regMouza) !== cleanText(deedMouza) ||
-    cleanText(deedMouza) !== cleanText(appMouza) ||
-    cleanText(regMouza) !== cleanText(appMouza);
+  const regOwnerNid = String(registry?.current_owner_nid ?? '');
+  const deedSellerNid = String(deed?.seller_nid ?? '');
 
-  // Khatian comparison
+  // Mouza comparison: differs ONLY when deed mouza differs from registry mouza.
+  // Show the application mouza in its column but never count it as a difference (the engine does not compare it).
+  const mouzaDiffers = cleanText(regMouza) !== cleanText(deedMouza);
+
+  // Khatian comparison: differs when deed differs from registry OR application differs from deed.
   const khatianDiffers =
     cleanText(regKhatian) !== cleanText(deedKhatian) ||
-    cleanText(deedKhatian) !== cleanText(appKhatian) ||
-    cleanText(regKhatian) !== cleanText(appKhatian);
+    cleanText(appKhatian) !== cleanText(deedKhatian);
 
-  // Dag comparison
+  // Dag comparison: differs when deed differs from registry OR application differs from deed.
   const dagDiffers =
     cleanText(regDag) !== cleanText(deedDag) ||
-    cleanText(deedDag) !== cleanText(appDag) ||
-    cleanText(regDag) !== cleanText(appDag);
+    cleanText(appDag) !== cleanText(deedDag);
 
-  // Area comparison (numbers compared to 2 decimals)
+  // Area comparison: differs when deed differs from registry OR application differs from deed.
   const areaDiffers =
     areasDiffer(regArea, deedArea) ||
-    areasDiffer(deedArea, appArea) ||
-    areasDiffer(regArea, appArea);
+    areasDiffer(appArea, deedArea);
 
-  // Seller comparison (Registry owner vs Deed seller; application shows em dash)
-  const sellerDiffers = cleanText(regOwner) !== cleanText(deedSeller);
+  // Seller comparison: differs when the deed seller name differs from the registry owner name
+  // OR (both the deed seller NID and the registry owner NID are non-empty and differ after trim).
+  const isNameMismatch = cleanText(regOwner) !== cleanText(deedSeller);
+  const isNidMismatch = Boolean(
+    regOwnerNid.trim() !== '' &&
+    deedSellerNid.trim() !== '' &&
+    regOwnerNid.trim() !== deedSellerNid.trim()
+  );
+  const sellerDiffers = isNameMismatch || isNidMismatch;
 
   const rows: ComparisonRow[] = [
     {
@@ -189,6 +198,8 @@ export function compareRecords(params: {
       deedValue: deedSeller,
       applicationValue: '—',
       differs: sellerDiffers,
+      registrySub: regOwnerNid.trim() || undefined,
+      deedSub: deedSellerNid.trim() || undefined,
     },
   ];
 
@@ -243,8 +254,8 @@ export function validateWizardStep(
     // buyer_nid
     if (!formData.buyer_nid || typeof formData.buyer_nid !== 'string' || !formData.buyer_nid.trim()) {
       errors.buyer_nid = msg.required('Buyer NID', 'ক্রেতার এনআইডি');
-    } else if (formData.buyer_nid.trim().length > 100) {
-      errors.buyer_nid = msg.maxLen('Buyer NID', 'ক্রেতার এনআইডি', 100);
+    } else if (formData.buyer_nid.trim().length > 50) {
+      errors.buyer_nid = msg.maxLen('Buyer NID', 'ক্রেতার এনআইডি', 50);
     }
   } else if (step === 2) {
     // deed_number
@@ -279,8 +290,8 @@ export function validateWizardStep(
     // seller_nid
     if (!formData.seller_nid || typeof formData.seller_nid !== 'string' || !formData.seller_nid.trim()) {
       errors.seller_nid = msg.required('Seller NID', 'বিক্রেতার এনআইডি');
-    } else if (formData.seller_nid.trim().length > 100) {
-      errors.seller_nid = msg.maxLen('Seller NID', 'বিক্রেতার এনআইডি', 100);
+    } else if (formData.seller_nid.trim().length > 50) {
+      errors.seller_nid = msg.maxLen('Seller NID', 'বিক্রেতার এনআইডি', 50);
     }
 
     // deed_mouza
@@ -313,7 +324,7 @@ export function validateWizardStep(
       errors.deed_area_decimal = msg.required('Deed Area', 'দলিলের জমির পরিমাণ');
     } else {
       const num = Number(formData.deed_area_decimal);
-      if (Number.isNaN(num) || !Number.isFinite(num) || num <= 0) {
+      if (Number.isNaN(num) || !Number.isFinite(num) || num <= 0 || num > 100000) {
         errors.deed_area_decimal = msg.positiveNumber('Deed Area', 'দলিলের জমির পরিমাণ');
       }
     }
@@ -348,7 +359,7 @@ export function validateWizardStep(
       errors.application_area_decimal = msg.required('Application Area', 'আবেদনকৃত জমির পরিমাণ');
     } else {
       const num = Number(formData.application_area_decimal);
-      if (Number.isNaN(num) || !Number.isFinite(num) || num <= 0) {
+      if (Number.isNaN(num) || !Number.isFinite(num) || num <= 0 || num > 100000) {
         errors.application_area_decimal = msg.positiveNumber('Application Area', 'আবেদনকৃত জমির পরিমাণ');
       }
     }

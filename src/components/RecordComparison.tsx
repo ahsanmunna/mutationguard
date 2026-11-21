@@ -11,7 +11,7 @@ import {
   compareRecords,
   countDifferences,
 } from '@/lib/wizard';
-import { formatNumber, localName, Language } from '@/lib/i18n/translations';
+import { formatNumber, formatCount, localName, Language } from '@/lib/i18n/translations';
 
 export interface RecordComparisonProps {
   rows?: ComparisonRow[];
@@ -91,10 +91,20 @@ export function RecordComparison({
                   {bn ? row.labelBn : row.labelEn}
                 </th>
                 <td className="py-2.5 px-3 text-slate-700 dark:text-slate-300">
-                  {formatDisplay(row.field, row.registry)}
+                  <div>{formatDisplay(row.field, row.registry)}</div>
+                  {row.registrySub && (
+                    <div className="font-mono text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      {row.registrySub}
+                    </div>
+                  )}
                 </td>
                 <td className="py-2.5 px-3 text-slate-700 dark:text-slate-300">
-                  {formatDisplay(row.field, row.deed)}
+                  <div>{formatDisplay(row.field, row.deed)}</div>
+                  {row.deedSub && (
+                    <div className="font-mono text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      {row.deedSub}
+                    </div>
+                  )}
                 </td>
                 <td className="py-2.5 px-3 text-slate-700 dark:text-slate-300">
                   {formatDisplay(row.field, row.application)}
@@ -152,7 +162,12 @@ export function RecordComparison({
                   {bn ? 'রেজিস্ট্রি:' : 'Registry:'}
                 </span>
                 <span className="text-slate-900 dark:text-white text-right font-medium">
-                  {formatDisplay(row.field, row.registry)}
+                  <div>{formatDisplay(row.field, row.registry)}</div>
+                  {row.registrySub && (
+                    <div className="font-mono text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      {row.registrySub}
+                    </div>
+                  )}
                 </span>
               </div>
 
@@ -161,7 +176,12 @@ export function RecordComparison({
                   {bn ? 'দলিল:' : 'Deed:'}
                 </span>
                 <span className="text-slate-900 dark:text-white text-right font-medium">
-                  {formatDisplay(row.field, row.deed)}
+                  <div>{formatDisplay(row.field, row.deed)}</div>
+                  {row.deedSub && (
+                    <div className="font-mono text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      {row.deedSub}
+                    </div>
+                  )}
                 </span>
               </div>
 
@@ -203,11 +223,11 @@ export function RecordComparison({
         <span>
           {diffCount > 0
             ? (bn
-                ? `${formatNumber(diffCount, 'bn')}টি অমিল পাওয়া গেছে। পর্যালোচনার জন্য আবেদনটি স্থগিত (hold) রাখা হবে।`
-                : `${diffCount} ${diffCount === 1 ? 'difference' : 'differences'} found. The system will hold this application for review.`)
+                ? `${formatCount(diffCount, 'bn')}টি সম্ভাব্য অমিল পাওয়া গেছে। আবেদন দাখিল করার সময় নিয়মগুলো এগুলো যাচাই করবে এবং পর্যালোচনার জন্য আবেদনটি স্থগিত রাখার সম্ভাবনা রয়েছে।`
+                : `${formatCount(diffCount, 'en')} potential difference(s) found. The rules check these when you submit and are likely to hold this application for review.`)
             : (bn
-                ? 'তিনটি রেকর্ডের তথ্যে সম্পূর্ণ মিল রয়েছে।'
-                : 'All three records agree.')}
+                ? 'তিনটি রেকর্ডের তথ্যে মিল রয়েছে। আবেদন দাখিল করার সময় অন্যান্য যাচাই, যেমন এই প্লটে বিদ্যমান সক্রিয় হস্তান্তর, পরিচালিত হবে।'
+                : 'The three records agree. Other checks, such as an existing active transfer on this parcel, run when you submit.')}
         </span>
       </div>
     </div>

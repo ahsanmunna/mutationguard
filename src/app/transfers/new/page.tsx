@@ -259,6 +259,15 @@ export default function NewTransferPage() {
     const allErrors = validateAllWizardSteps(formData, language);
     if (Object.keys(allErrors).length > 0) {
       setErrors(allErrors);
+      const step1Errors = validateWizardStep(1, formData, language);
+      const step2Errors = validateWizardStep(2, formData, language);
+      if (Object.keys(step1Errors).length > 0) {
+        setCurrentStep(1);
+      } else if (Object.keys(step2Errors).length > 0) {
+        setCurrentStep(2);
+      } else {
+        setCurrentStep(3);
+      }
       return;
     }
     setSubmitting(true);

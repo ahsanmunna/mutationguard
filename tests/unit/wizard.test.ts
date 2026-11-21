@@ -6,6 +6,12 @@ import {
   validateWizardStep,
   validateAllWizardSteps,
 } from '../../src/lib/wizard';
+import { evaluateAllRules } from '../../src/lib/rules/engine';
+import {
+  MutationApplication,
+  ParcelRecord,
+  DeedRecord,
+} from '../../src/lib/rules/types';
 
 describe('Wizard Logic: compareRecords', () => {
   const baseRegistry = {
@@ -132,6 +138,46 @@ describe('Wizard Logic: compareRecords', () => {
     expect(sellerRow?.application).toBe('—');
     expect(countDifferences(rows)).toBe(1);
   });
+
+  it('mouza row: differs ONLY when deed mouza differs from registry mouza, application mouza shown but not counted', () => {
+    const rows = compareRecords({
+      registry: baseRegistry,
+      deed: baseDeed,
+      application: { ...baseApplication, application_mouza: 'Gulshan-103' },
+    });
+
+    const mouzaRow = rows.find((r) => r.field === 'mouza');
+    expect(mouzaRow).toBeDefined();
+    expect(mouzaRow?.differs).toBe(false);
+    expect(mouzaRow?.registry).toBe('Dhanmondi-102');
+    expect(mouzaRow?.deed).toBe('Dhanmondi-102');
+    expect(mouzaRow?.application).toBe('Gulshan-103');
+    expect(countDifferences(rows)).toBe(0);
+  });
+
+  it('seller row: includes registrySub and deedSub, and differs when NID differs only', () => {
+    const rows = compareRecords({
+      registry: {
+        ...baseRegistry,
+        current_owner_name: 'Rahim Uddin',
+        current_owner_nid: 'NID-DEMO-0001',
+      },
+      deed: {
+        ...baseDeed,
+        seller_name: 'Rahim Uddin',
+        seller_nid: 'NID-DEMO-9999',
+      },
+      application: baseApplication,
+    });
+
+    const sellerRow = rows.find((r) => r.field === 'seller');
+    expect(sellerRow).toBeDefined();
+    expect(sellerRow?.differs).toBe(true);
+    expect(sellerRow?.registrySub).toBe('NID-DEMO-0001');
+    expect(sellerRow?.deedSub).toBe('NID-DEMO-9999');
+    expect(sellerRow?.application).toBe('—');
+    expect(countDifferences(rows)).toBe(1);
+  });
 });
 
 describe('Wizard Validation: validateWizardStep', () => {
@@ -183,14 +229,29 @@ describe('Wizard Validation: validateWizardStep', () => {
       expect(whitespaceErrors.buyer_nid).toBeDefined();
     });
 
-    it('rejects over-long names and NID (> 100 chars)', () => {
+    it('rejects over-long names (> 100 chars) and NID (> 50 chars)', () => {
       const errors = validateWizardStep(1, {
         parcel_id: 'P-001',
         buyer_name: 'A'.repeat(101),
-        buyer_nid: 'N'.repeat(101),
+        buyer_nid: 'N'.repeat(51),
       });
       expect(errors.buyer_name).toMatch(/at most 100/);
-      expect(errors.buyer_nid).toMatch(/at most 100/);
+      expect(errors.buyer_nid).toMatch(/at most 50/);
+    });
+
+    it('50-char NID passes, 51 fails (Step 1 buyer_nid)', () => {
+      const pass50 = validateWizardStep(1, {
+        ...fullyValidForm,
+        buyer_nid: 'N'.repeat(50),
+      });
+      expect(pass50.buyer_nid).toBeUndefined();
+
+      const fail51 = validateWizardStep(1, {
+        ...fullyValidForm,
+        buyer_nid: 'N'.repeat(51),
+      });
+      expect(fail51.buyer_nid).toBeDefined();
+      expect(fail51.buyer_nid).toMatch(/at most 50/);
     });
 
     it('supports Bangla error messages', () => {
@@ -261,6 +322,35 @@ describe('Wizard Validation: validateWizardStep', () => {
       const valid2 = validateWizardStep(2, { ...fullyValidForm, deed_area_decimal: '0.05' });
       expect(valid2.deed_area_decimal).toBeUndefined();
     });
+
+    it('50-char NID passes, 51 fails (Step 2 seller_nid)', () => {
+      const pass50 = validateWizardStep(2, {
+        ...fullyValidForm,
+        seller_nid: 'S'.repeat(50),
+      });
+      expect(pass50.seller_nid).toBeUndefined();
+
+      const fail51 = validateWizardStep(2, {
+        ...fullyValidForm,
+        seller_nid: 'S'.repeat(51),
+      });
+      expect(fail51.seller_nid).toBeDefined();
+      expect(fail51.seller_nid).toMatch(/at most 50/);
+    });
+
+    it('area 100000 passes, 100001 fails (Step 2 deed_area_decimal)', () => {
+      const pass100k = validateWizardStep(2, {
+        ...fullyValidForm,
+        deed_area_decimal: '100000',
+      });
+      expect(pass100k.deed_area_decimal).toBeUndefined();
+
+      const fail100k1 = validateWizardStep(2, {
+        ...fullyValidForm,
+        deed_area_decimal: '100001',
+      });
+      expect(fail100k1.deed_area_decimal).toBeDefined();
+    });
   });
 
   describe('Step 3 validation', () => {
@@ -294,5 +384,191 @@ describe('Wizard Validation: validateWizardStep', () => {
         expect(errors.application_area_decimal).toBeDefined();
       }
     });
+
+    it('area 100000 passes, 100001 fails (Step 3 application_area_decimal)', () => {
+      const pass100k = validateWizardStep(3, {
+        ...fullyValidForm,
+        application_area_decimal: '100000',
+      });
+      expect(pass100k.application_area_decimal).toBeUndefined();
+
+      const fail100k1 = validateWizardStep(3, {
+        ...fullyValidForm,
+        application_area_decimal: '100001',
+      });
+      expect(fail100k1.application_area_decimal).toBeDefined();
+    });
+  });
+});
+
+describe('Engine Consistency: compareRecords vs evaluateAllRules', () => {
+  const baseParcel: ParcelRecord = {
+    id: 'P-001',
+    mouza: 'Dhanmondi-102',
+    khatian: 'K-501',
+    dag: 'D-1001',
+    area_decimal: '5.00',
+    current_owner_name: 'Rahim Uddin',
+    current_owner_nid: 'NID-DEMO-0001',
+    status: 'active',
+  };
+
+  const baseDeed: DeedRecord = {
+    deed_number: 'DEED-2026-1001',
+    parcel_id: 'P-001',
+    seller_name: 'Rahim Uddin',
+    seller_nid: 'NID-DEMO-0001',
+    buyer_name: 'Karim Chowdhury',
+    buyer_nid: 'NID-DEMO-0002',
+    mouza: 'Dhanmondi-102',
+    khatian: 'K-501',
+    dag: 'D-1001',
+    area_decimal: '5.00',
+    deed_date: '2026-01-15',
+  };
+
+  const baseApp: MutationApplication = {
+    parcel_id: 'P-001',
+    deed_number: 'DEED-2026-1001',
+    applicant_username: 'karim_applicant',
+    seller_name: 'Rahim Uddin',
+    seller_nid: 'NID-DEMO-0001',
+    buyer_name: 'Karim Chowdhury',
+    buyer_nid: 'NID-DEMO-0002',
+    application_mouza: 'Dhanmondi-102',
+    application_khatian: 'K-501',
+    application_dag: 'D-1001',
+    application_area_decimal: '5.00',
+  };
+
+  interface Scenario {
+    name: string;
+    parcel: ParcelRecord;
+    deed: DeedRecord;
+    application: MutationApplication;
+    expectedDiff: boolean;
+  }
+
+  const scenarios: Scenario[] = [
+    {
+      name: 'all match',
+      parcel: baseParcel,
+      deed: baseDeed,
+      application: baseApp,
+      expectedDiff: false,
+    },
+    {
+      name: 'deed dag differs',
+      parcel: baseParcel,
+      deed: { ...baseDeed, dag: 'D-2002' },
+      application: { ...baseApp, application_dag: 'D-2002' },
+      expectedDiff: true,
+    },
+    {
+      name: 'application dag differs',
+      parcel: baseParcel,
+      deed: baseDeed,
+      application: { ...baseApp, application_dag: 'D-2099' },
+      expectedDiff: true,
+    },
+    {
+      name: 'application MOUZA differs only (expect no difference)',
+      parcel: baseParcel,
+      deed: baseDeed,
+      application: { ...baseApp, application_mouza: 'Gulshan-103' },
+      expectedDiff: false,
+    },
+    {
+      name: 'application khatian differs',
+      parcel: baseParcel,
+      deed: baseDeed,
+      application: { ...baseApp, application_khatian: 'K-999' },
+      expectedDiff: true,
+    },
+    {
+      name: 'area 8.5 vs 8.50 (no difference)',
+      parcel: { ...baseParcel, area_decimal: 8.5 },
+      deed: { ...baseDeed, area_decimal: '8.50' },
+      application: { ...baseApp, application_area_decimal: '8.50' },
+      expectedDiff: false,
+    },
+    {
+      name: 'deed area differs',
+      parcel: baseParcel,
+      deed: { ...baseDeed, area_decimal: '6.50' },
+      application: { ...baseApp, application_area_decimal: '6.50' },
+      expectedDiff: true,
+    },
+    {
+      name: 'application area differs',
+      parcel: baseParcel,
+      deed: baseDeed,
+      application: { ...baseApp, application_area_decimal: '4.50' },
+      expectedDiff: true,
+    },
+    {
+      name: 'deed seller name differs',
+      parcel: baseParcel,
+      deed: { ...baseDeed, seller_name: 'Abdul Maleque' },
+      application: { ...baseApp, seller_name: 'Abdul Maleque' },
+      expectedDiff: true,
+    },
+    {
+      name: 'seller NID differs only',
+      parcel: baseParcel,
+      deed: { ...baseDeed, seller_nid: 'NID-DEMO-9999' },
+      application: { ...baseApp, seller_nid: 'NID-DEMO-9999' },
+      expectedDiff: true,
+    },
+    {
+      name: 'leading/trailing spaces and different letter case',
+      parcel: {
+        ...baseParcel,
+        mouza: '  Dhanmondi-102  ',
+        khatian: 'K-501',
+        dag: 'D-1001',
+        current_owner_name: 'RAHIM UDDIN',
+      },
+      deed: {
+        ...baseDeed,
+        mouza: 'dhanmondi-102',
+        khatian: '  k-501  ',
+        dag: 'd-1001',
+        seller_name: 'rahim uddin',
+      },
+      application: {
+        ...baseApp,
+        application_mouza: 'DHANMONDI-102',
+        application_khatian: 'k-501',
+        application_dag: '  D-1001  ',
+        seller_name: ' Rahim Uddin ',
+      },
+      expectedDiff: false,
+    },
+  ];
+
+  it.each(scenarios)('$name', ({ parcel, deed, application, expectedDiff }) => {
+    // 1. Run compareRecords
+    const rows = compareRecords({
+      registry: parcel,
+      deed,
+      application,
+    });
+    const diffCount = countDifferences(rows);
+
+    // 2. Run real rules engine with no active transfers
+    const findings = evaluateAllRules({
+      application,
+      parcel,
+      deed,
+      activeTransfer: null,
+    });
+    const engineHasMismatchOrWrongSeller = findings.some(
+      (f) => f.rule_id === 'RECORD_MISMATCH' || f.rule_id === 'WRONG_SELLER'
+    );
+
+    // 3. Assert: countDifferences(rows) > 0 exactly when engine returns RECORD_MISMATCH or WRONG_SELLER
+    expect(diffCount > 0).toBe(engineHasMismatchOrWrongSeller);
+    expect(diffCount > 0).toBe(expectedDiff);
   });
 });
