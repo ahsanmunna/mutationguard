@@ -2,14 +2,16 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, ArrowRight, ArrowLeft, RotateCcw, FileText, ChevronDown, Zap } from 'lucide-react';
+import { Check, ArrowRight, ArrowLeft, RotateCcw, FileText, ChevronDown, Zap, TriangleAlert } from 'lucide-react';
 import { useLanguage } from '@/components/LanguageContext';
 import ConflictAlert from '@/components/ConflictAlert';
 import StatusBadge from '@/components/StatusBadge';
+import RecordComparison from '@/components/RecordComparison';
 import { Field, Button, PageHeader } from '@/components/ui';
 import { Finding } from '@/lib/rules/types';
 import { DEMO_PARCELS } from '@/lib/demo-parcels';
 import { formatNumber, localName } from '@/lib/i18n/translations';
+import { validateWizardStep, validateAllWizardSteps } from '@/lib/wizard';
 
 interface ParcelOption {
   id: string;
@@ -21,8 +23,8 @@ interface ParcelOption {
   area_decimal: number | string;
 }
 
-  // Fallback list shown until /api/parcels answers. One shared source: src/lib/demo-parcels.ts
-  const DEFAULT_PARCELS: ParcelOption[] = DEMO_PARCELS;
+// Fallback list shown until /api/parcels answers. One shared source: src/lib/demo-parcels.ts
+const DEFAULT_PARCELS: ParcelOption[] = DEMO_PARCELS;
 
 function generateDeedNumber(): string {
   const random4 = Math.floor(1000 + Math.random() * 9000);
@@ -35,7 +37,9 @@ export default function NewTransferPage() {
   const bn = language === 'bn';
 
   const [parcels, setParcels] = useState<ParcelOption[]>(DEFAULT_PARCELS);
-  const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
+  const [applicationTouched, setApplicationTouched] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   // Form State
   const [formData, setFormData] = useState({
@@ -85,10 +89,26 @@ export default function NewTransferPage() {
     loadParcels();
   }, []);
 
-  // When parcel changes, prefill Deed & Application fields
+  const updateFormField = (field: string, value: string, isApplicationField = false) => {
+    if (isApplicationField) {
+      setApplicationTouched(true);
+    }
+    setFormData((prev) => ({ ...prev, [field]: value }));
+    if (errors[field]) {
+      setErrors((prev) => {
+        const next = { ...prev };
+        delete next[field];
+        return next;
+      });
+    }
+  };
+
+  // When parcel changes, prefill Deed & Application fields and reset applicationTouched
   const handleParcelChange = (parcelId: string) => {
     const selected = parcels.find((p) => p.id === parcelId) || parcels[0];
     const newDeedNum = generateDeedNumber();
+    setApplicationTouched(false);
+    setErrors({});
     setFormData((prev) => ({
       ...prev,
       parcel_id: selected.id,
@@ -108,6 +128,8 @@ export default function NewTransferPage() {
 
   // Preset demo scenarios
   const loadScenario = (type: string) => {
+    setApplicationTouched(true);
+    setErrors({});
     switch (type) {
       case 'karim_clean':
         setFormData({
@@ -186,26 +208,59 @@ export default function NewTransferPage() {
         });
         break;
     }
-    setCurrentStep(3);
+    setCurrentStep(4);
   };
 
   const selectedParcel =
     parcels.find((p) => p.id === formData.parcel_id) || parcels[0];
 
-  // Moving from Step 2 to Step 3 auto-syncs application fields
+  const handleProceedToStep2 = () => {
+    const stepErrors = validateWizardStep(1, formData, language);
+    if (Object.keys(stepErrors).length > 0) {
+      setErrors(stepErrors);
+      return;
+    }
+    setErrors({});
+    setCurrentStep(2);
+  };
+
   const handleProceedToStep3 = () => {
-    setFormData((prev) => ({
-      ...prev,
-      application_mouza: prev.deed_mouza,
-      application_khatian: prev.deed_khatian,
-      application_dag: prev.deed_dag,
-      application_area_decimal: prev.deed_area_decimal,
-    }));
+    const stepErrors = validateWizardStep(2, formData, language);
+    if (Object.keys(stepErrors).length > 0) {
+      setErrors(stepErrors);
+      return;
+    }
+    setErrors({});
+    // Prefill application fields from DEED values only until user edits any application field
+    if (!applicationTouched) {
+      setFormData((prev) => ({
+        ...prev,
+        application_mouza: prev.deed_mouza,
+        application_khatian: prev.deed_khatian,
+        application_dag: prev.deed_dag,
+        application_area_decimal: prev.deed_area_decimal,
+      }));
+    }
     setCurrentStep(3);
+  };
+
+  const handleProceedToStep4 = () => {
+    const stepErrors = validateWizardStep(3, formData, language);
+    if (Object.keys(stepErrors).length > 0) {
+      setErrors(stepErrors);
+      return;
+    }
+    setErrors({});
+    setCurrentStep(4);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const allErrors = validateAllWizardSteps(formData, language);
+    if (Object.keys(allErrors).length > 0) {
+      setErrors(allErrors);
+      return;
+    }
     setSubmitting(true);
     setResult(null);
 
@@ -251,6 +306,8 @@ export default function NewTransferPage() {
 
   const handleStartNewApplication = () => {
     setResult(null);
+    setApplicationTouched(false);
+    setErrors({});
     setCurrentStep(1);
     setFormData((prev) => ({
       ...prev,
@@ -261,7 +318,8 @@ export default function NewTransferPage() {
   const steps = [
     { num: 1, titleBn: 'পার্সেল ও ক্রেতা', titleEn: 'Parcel & Buyer' },
     { num: 2, titleBn: 'দলিলের বিবরণ', titleEn: 'Deed Details' },
-    { num: 3, titleBn: 'আবেদন ও পর্যালোচনা', titleEn: 'Application & Review' },
+    { num: 3, titleBn: 'আবেদনের তথ্য', titleEn: 'Application Details' },
+    { num: 4, titleBn: 'পর্যালোচনা ও দাখিল', titleEn: 'Review & Submit' },
   ];
 
   return (
@@ -271,8 +329,8 @@ export default function NewTransferPage() {
         title={bn ? 'নতুন নামজারি আবেদন' : 'Submit Mutation Application'}
         description={
           bn
-            ? '৩-ধাপের প্রক্রিয়া। আবেদন দাখিলের সাথে সাথে ৩টি নীতি স্বয়ংক্রিয়ভাবে যাচাই হবে।'
-            : '3-step wizard. Instant 3-rule conflict detection validates every submission.'
+            ? '৪-ধাপের প্রক্রিয়া। আবেদন দাখিলের সাথে সাথে ৩টি নীতি স্বয়ংক্রিয়ভাবে যাচাই হবে।'
+            : '4-step wizard. Instant 3-rule conflict detection validates every submission.'
         }
       />
 
@@ -386,7 +444,7 @@ export default function NewTransferPage() {
         <div className="space-y-6">
           {/* Numbered Progress Line */}
           <nav aria-label="Progress" className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-2 sm:p-3">
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {steps.map((s) => {
                 const isActive = currentStep === s.num;
                 const isPassed = currentStep > s.num;
@@ -395,7 +453,10 @@ export default function NewTransferPage() {
                     key={s.num}
                     type="button"
                     onClick={() => {
-                      if (isPassed) setCurrentStep(s.num as any);
+                      if (isPassed) {
+                        setErrors({});
+                        setCurrentStep(s.num as any);
+                      }
                     }}
                     disabled={!isPassed && !isActive}
                     className={`min-h-[44px] px-3 py-2 rounded-md transition-colors flex items-center justify-center gap-2 text-xs font-semibold ${
@@ -445,6 +506,8 @@ export default function NewTransferPage() {
                     id="parcel_id"
                     value={formData.parcel_id}
                     onChange={(e) => handleParcelChange(e.target.value)}
+                    aria-invalid={!!errors.parcel_id}
+                    aria-describedby={errors.parcel_id ? 'parcel_id-error' : undefined}
                     className="min-h-[44px] w-full px-3 py-2 text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium"
                   >
                     {parcels.map((p) => (
@@ -453,35 +516,62 @@ export default function NewTransferPage() {
                       </option>
                     ))}
                   </select>
+                  {errors.parcel_id && (
+                    <p id="parcel_id-error" role="alert" className="text-xs text-rose-600 dark:text-rose-400 mt-1 flex items-center gap-1 font-medium">
+                      <TriangleAlert className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+                      <span>{errors.parcel_id}</span>
+                    </p>
+                  )}
                 </Field>
 
-                {/* Selected Parcel Overview Box */}
+                {/* Read-only "Registry Record" panel for selected parcel */}
                 {selectedParcel && (
-                  <div className="p-3.5 rounded-md bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs space-y-2">
-                    <span className="font-semibold text-slate-500 uppercase tracking-wide text-[11px] block">
-                      {bn ? 'রেজিস্ট্রি রেকর্ড অনুযায়ী বর্তমান মালিকানা:' : 'Recorded Land Registry Information:'}
-                    </span>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="p-4 rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs space-y-3">
+                    <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
+                      <span className="font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wide text-xs">
+                        {bn ? 'রেজিস্ট্রি রেকর্ড (Registry Record):' : 'Official Registry Record:'}
+                      </span>
+                      <span className="font-mono text-xs px-2 py-0.5 rounded bg-slate-200/70 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold">
+                        {selectedParcel.id}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                       <div>
-                        <span className="text-slate-500 block">{bn ? 'মালিক:' : 'Owner:'}</span>
-                        <span className="font-semibold text-slate-900 dark:text-white">
-                          {localName(selectedParcel.current_owner_name, language)}
+                        <span className="text-slate-500 block text-[11px]">{bn ? 'প্লট আইডি:' : 'Parcel ID:'}</span>
+                        <span className="font-mono font-semibold text-slate-900 dark:text-white">
+                          {selectedParcel.id}
                         </span>
                       </div>
                       <div>
-                        <span className="text-slate-500 block">{bn ? 'এনআইডি:' : 'Owner NID:'}</span>
-                        <span className="font-mono text-slate-900 dark:text-white">
+                        <span className="text-slate-500 block text-[11px]">{bn ? 'বর্তমান মালিক:' : 'Current Owner:'}</span>
+                        <span className="font-semibold text-slate-900 dark:text-white">
+                          {localName(selectedParcel.current_owner_name, language)}
+                        </span>
+                        <span className="text-slate-500 block font-mono text-[11px]">
                           {selectedParcel.current_owner_nid}
                         </span>
                       </div>
                       <div>
-                        <span className="text-slate-500 block">{bn ? 'মৌজা / দাগ:' : 'Mouza / Dag:'}</span>
+                        <span className="text-slate-500 block text-[11px]">{bn ? 'মৌজা:' : 'Mouza:'}</span>
                         <span className="font-semibold text-slate-900 dark:text-white">
-                          {selectedParcel.mouza}, {selectedParcel.dag}
+                          {selectedParcel.mouza}
                         </span>
                       </div>
                       <div>
-                        <span className="text-slate-500 block">{bn ? 'পরিমাণ:' : 'Area:'}</span>
+                        <span className="text-slate-500 block text-[11px]">{bn ? 'খতিয়ান:' : 'Khatian:'}</span>
+                        <span className="font-semibold text-slate-900 dark:text-white">
+                          {selectedParcel.khatian}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block text-[11px]">{bn ? 'দাগ নং:' : 'Dag No:'}</span>
+                        <span className="font-semibold text-slate-900 dark:text-white">
+                          {selectedParcel.dag}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500 block text-[11px]">{bn ? 'রেকর্ডকৃত পরিমাণ:' : 'Recorded Area:'}</span>
                         <span className="font-bold text-emerald-700 dark:text-emerald-400">
                           {formatNumber(selectedParcel.area_decimal, language)} {bn ? 'শতক' : 'Decimal'}
                         </span>
@@ -502,10 +592,18 @@ export default function NewTransferPage() {
                       type="text"
                       required
                       value={formData.buyer_name}
-                      onChange={(e) => setFormData({ ...formData, buyer_name: e.target.value })}
+                      onChange={(e) => updateFormField('buyer_name', e.target.value)}
+                      aria-invalid={!!errors.buyer_name}
+                      aria-describedby={errors.buyer_name ? 'buyer_name-error' : undefined}
                       className="min-h-[44px] w-full px-3 py-2 text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                       placeholder="e.g. Karim Chowdhury"
                     />
+                    {errors.buyer_name && (
+                      <p id="buyer_name-error" role="alert" className="text-xs text-rose-600 dark:text-rose-400 mt-1 flex items-center gap-1 font-medium">
+                        <TriangleAlert className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+                        <span>{errors.buyer_name}</span>
+                      </p>
+                    )}
                   </Field>
 
                   <Field
@@ -518,10 +616,18 @@ export default function NewTransferPage() {
                       type="text"
                       required
                       value={formData.buyer_nid}
-                      onChange={(e) => setFormData({ ...formData, buyer_nid: e.target.value })}
+                      onChange={(e) => updateFormField('buyer_nid', e.target.value)}
+                      aria-invalid={!!errors.buyer_nid}
+                      aria-describedby={errors.buyer_nid ? 'buyer_nid-error' : undefined}
                       className="min-h-[44px] w-full px-3 py-2 text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
                       placeholder="NID-DEMO-0002"
                     />
+                    {errors.buyer_nid && (
+                      <p id="buyer_nid-error" role="alert" className="text-xs text-rose-600 dark:text-rose-400 mt-1 flex items-center gap-1 font-medium">
+                        <TriangleAlert className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+                        <span>{errors.buyer_nid}</span>
+                      </p>
+                    )}
                   </Field>
                 </div>
 
@@ -530,8 +636,8 @@ export default function NewTransferPage() {
                     type="button"
                     variant="primary"
                     size="md"
-                    onClick={() => setCurrentStep(2)}
-                    className="w-full sm:w-auto"
+                    onClick={handleProceedToStep2}
+                    className="w-full sm:w-auto min-h-[44px]"
                     icon={<ArrowRight className="w-4 h-4" strokeWidth={1.75} aria-hidden="true" />}
                   >
                     {bn ? 'পরবর্তী: দলিলের বিবরণ' : 'Next: Deed Details'}
@@ -549,8 +655,8 @@ export default function NewTransferPage() {
                   </h2>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                     {bn
-                      ? 'রেজিস্ট্রি রেকর্ড হতে স্বয়ংক্রিয় পূরণকৃত। অসঙ্গতি পরীক্ষার জন্য সম্পাদনাযোগ্য।'
-                      : 'Prefilled from registry baseline. Editable to test conflict discrepancies.'}
+                      ? 'এগুলি দলিলে লিখিত তথ্য।'
+                      : 'These are the values written on the deed.'}
                   </p>
                 </div>
 
@@ -566,7 +672,9 @@ export default function NewTransferPage() {
                         type="text"
                         required
                         value={formData.deed_number}
-                        onChange={(e) => setFormData({ ...formData, deed_number: e.target.value })}
+                        onChange={(e) => updateFormField('deed_number', e.target.value)}
+                        aria-invalid={!!errors.deed_number}
+                        aria-describedby={errors.deed_number ? 'deed_number-error' : undefined}
                         className="min-h-[44px] w-full px-3 py-2 text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
                       />
                       <Button
@@ -574,13 +682,19 @@ export default function NewTransferPage() {
                         variant="secondary"
                         size="sm"
                         onClick={() =>
-                          setFormData({ ...formData, deed_number: generateDeedNumber() })
+                          updateFormField('deed_number', generateDeedNumber())
                         }
                         title={bn ? 'নতুন এলোমেলো দলিল নম্বর তৈরি' : 'Generate random deed number'}
                       >
                         {bn ? 'নতুন' : 'New'}
                       </Button>
                     </div>
+                    {errors.deed_number && (
+                      <p id="deed_number-error" role="alert" className="text-xs text-rose-600 dark:text-rose-400 mt-1 flex items-center gap-1 font-medium">
+                        <TriangleAlert className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+                        <span>{errors.deed_number}</span>
+                      </p>
+                    )}
                   </Field>
 
                   <Field
@@ -593,9 +707,17 @@ export default function NewTransferPage() {
                       type="date"
                       required
                       value={formData.deed_date}
-                      onChange={(e) => setFormData({ ...formData, deed_date: e.target.value })}
+                      onChange={(e) => updateFormField('deed_date', e.target.value)}
+                      aria-invalid={!!errors.deed_date}
+                      aria-describedby={errors.deed_date ? 'deed_date-error' : undefined}
                       className="min-h-[44px] w-full px-3 py-2 text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     />
+                    {errors.deed_date && (
+                      <p id="deed_date-error" role="alert" className="text-xs text-rose-600 dark:text-rose-400 mt-1 flex items-center gap-1 font-medium">
+                        <TriangleAlert className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+                        <span>{errors.deed_date}</span>
+                      </p>
+                    )}
                   </Field>
                 </div>
 
@@ -610,9 +732,17 @@ export default function NewTransferPage() {
                       type="text"
                       required
                       value={formData.seller_name}
-                      onChange={(e) => setFormData({ ...formData, seller_name: e.target.value })}
+                      onChange={(e) => updateFormField('seller_name', e.target.value)}
+                      aria-invalid={!!errors.seller_name}
+                      aria-describedby={errors.seller_name ? 'seller_name-error' : undefined}
                       className="min-h-[44px] w-full px-3 py-2 text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     />
+                    {errors.seller_name && (
+                      <p id="seller_name-error" role="alert" className="text-xs text-rose-600 dark:text-rose-400 mt-1 flex items-center gap-1 font-medium">
+                        <TriangleAlert className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+                        <span>{errors.seller_name}</span>
+                      </p>
+                    )}
                   </Field>
 
                   <Field
@@ -625,9 +755,17 @@ export default function NewTransferPage() {
                       type="text"
                       required
                       value={formData.seller_nid}
-                      onChange={(e) => setFormData({ ...formData, seller_nid: e.target.value })}
+                      onChange={(e) => updateFormField('seller_nid', e.target.value)}
+                      aria-invalid={!!errors.seller_nid}
+                      aria-describedby={errors.seller_nid ? 'seller_nid-error' : undefined}
                       className="min-h-[44px] w-full px-3 py-2 text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     />
+                    {errors.seller_nid && (
+                      <p id="seller_nid-error" role="alert" className="text-xs text-rose-600 dark:text-rose-400 mt-1 flex items-center gap-1 font-medium">
+                        <TriangleAlert className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+                        <span>{errors.seller_nid}</span>
+                      </p>
+                    )}
                   </Field>
                 </div>
 
@@ -642,9 +780,17 @@ export default function NewTransferPage() {
                       type="text"
                       required
                       value={formData.deed_mouza}
-                      onChange={(e) => setFormData({ ...formData, deed_mouza: e.target.value })}
+                      onChange={(e) => updateFormField('deed_mouza', e.target.value)}
+                      aria-invalid={!!errors.deed_mouza}
+                      aria-describedby={errors.deed_mouza ? 'deed_mouza-error' : undefined}
                       className="min-h-[44px] w-full px-3 py-2 text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     />
+                    {errors.deed_mouza && (
+                      <p id="deed_mouza-error" role="alert" className="text-xs text-rose-600 dark:text-rose-400 mt-1 flex items-center gap-1 font-medium">
+                        <TriangleAlert className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+                        <span>{errors.deed_mouza}</span>
+                      </p>
+                    )}
                   </Field>
 
                   <Field
@@ -657,9 +803,17 @@ export default function NewTransferPage() {
                       type="text"
                       required
                       value={formData.deed_khatian}
-                      onChange={(e) => setFormData({ ...formData, deed_khatian: e.target.value })}
+                      onChange={(e) => updateFormField('deed_khatian', e.target.value)}
+                      aria-invalid={!!errors.deed_khatian}
+                      aria-describedby={errors.deed_khatian ? 'deed_khatian-error' : undefined}
                       className="min-h-[44px] w-full px-3 py-2 text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     />
+                    {errors.deed_khatian && (
+                      <p id="deed_khatian-error" role="alert" className="text-xs text-rose-600 dark:text-rose-400 mt-1 flex items-center gap-1 font-medium">
+                        <TriangleAlert className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+                        <span>{errors.deed_khatian}</span>
+                      </p>
+                    )}
                   </Field>
 
                   <Field
@@ -672,9 +826,17 @@ export default function NewTransferPage() {
                       type="text"
                       required
                       value={formData.deed_dag}
-                      onChange={(e) => setFormData({ ...formData, deed_dag: e.target.value })}
+                      onChange={(e) => updateFormField('deed_dag', e.target.value)}
+                      aria-invalid={!!errors.deed_dag}
+                      aria-describedby={errors.deed_dag ? 'deed_dag-error' : undefined}
                       className="min-h-[44px] w-full px-3 py-2 text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     />
+                    {errors.deed_dag && (
+                      <p id="deed_dag-error" role="alert" className="text-xs text-rose-600 dark:text-rose-400 mt-1 flex items-center gap-1 font-medium">
+                        <TriangleAlert className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+                        <span>{errors.deed_dag}</span>
+                      </p>
+                    )}
                   </Field>
 
                   <Field
@@ -688,11 +850,17 @@ export default function NewTransferPage() {
                       step="0.01"
                       required
                       value={formData.deed_area_decimal}
-                      onChange={(e) =>
-                        setFormData({ ...formData, deed_area_decimal: e.target.value })
-                      }
+                      onChange={(e) => updateFormField('deed_area_decimal', e.target.value)}
+                      aria-invalid={!!errors.deed_area_decimal}
+                      aria-describedby={errors.deed_area_decimal ? 'deed_area_decimal-error' : undefined}
                       className="min-h-[44px] w-full px-3 py-2 text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     />
+                    {errors.deed_area_decimal && (
+                      <p id="deed_area_decimal-error" role="alert" className="text-xs text-rose-600 dark:text-rose-400 mt-1 flex items-center gap-1 font-medium">
+                        <TriangleAlert className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+                        <span>{errors.deed_area_decimal}</span>
+                      </p>
+                    )}
                   </Field>
                 </div>
 
@@ -701,8 +869,11 @@ export default function NewTransferPage() {
                     type="button"
                     variant="secondary"
                     size="md"
-                    onClick={() => setCurrentStep(1)}
-                    className="w-full sm:w-auto"
+                    onClick={() => {
+                      setErrors({});
+                      setCurrentStep(1);
+                    }}
+                    className="w-full sm:w-auto min-h-[44px]"
                     icon={<ArrowLeft className="w-4 h-4" strokeWidth={1.75} aria-hidden="true" />}
                   >
                     {bn ? 'পূর্ববর্তী' : 'Previous'}
@@ -712,7 +883,7 @@ export default function NewTransferPage() {
                     variant="primary"
                     size="md"
                     onClick={handleProceedToStep3}
-                    className="w-full sm:w-auto"
+                    className="w-full sm:w-auto min-h-[44px]"
                     icon={<ArrowRight className="w-4 h-4" strokeWidth={1.75} aria-hidden="true" />}
                   >
                     {bn ? 'পরবর্তী: আবেদনের বিবরণ' : 'Next: Application Details'}
@@ -721,17 +892,17 @@ export default function NewTransferPage() {
               </div>
             )}
 
-            {/* STEP 3: APPLICATION DETAILS & SUBMIT */}
+            {/* STEP 3: APPLICATION DETAILS */}
             {currentStep === 3 && (
               <div className="space-y-5">
                 <div className="border-b border-slate-200 dark:border-slate-800 pb-3">
                   <h2 className="text-lg font-bold text-slate-900 dark:text-white">
-                    {bn ? 'ধাপ ৩: নামজারি আবেদনের বিবরণ ও দাখিল' : 'Step 3: Mutation Application Details & Submission'}
+                    {bn ? 'ধাপ ৩: নামজারি আবেদনের বিবরণ' : 'Step 3: Mutation Application Details'}
                   </h2>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                     {bn
-                      ? 'দলিল হতে স্বয়ংক্রিয়ভাবে অনুলিপিকৃত। অসঙ্গতি পরীক্ষার জন্য ইচ্ছাকৃত পরিবর্তন করতে পারেন।'
-                      : 'Copied from deed. Modify only if intentionally testing RECORD_MISMATCH rule.'}
+                      ? 'এগুলি আবেদনকারী কর্তৃক ঘোষিত তথ্য।'
+                      : 'These are the values the applicant declares.'}
                   </p>
                 </div>
 
@@ -746,11 +917,17 @@ export default function NewTransferPage() {
                       type="text"
                       required
                       value={formData.application_mouza}
-                      onChange={(e) =>
-                        setFormData({ ...formData, application_mouza: e.target.value })
-                      }
+                      onChange={(e) => updateFormField('application_mouza', e.target.value, true)}
+                      aria-invalid={!!errors.application_mouza}
+                      aria-describedby={errors.application_mouza ? 'application_mouza-error' : undefined}
                       className="min-h-[44px] w-full px-3 py-2 text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     />
+                    {errors.application_mouza && (
+                      <p id="application_mouza-error" role="alert" className="text-xs text-rose-600 dark:text-rose-400 mt-1 flex items-center gap-1 font-medium">
+                        <TriangleAlert className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+                        <span>{errors.application_mouza}</span>
+                      </p>
+                    )}
                   </Field>
 
                   <Field
@@ -763,11 +940,17 @@ export default function NewTransferPage() {
                       type="text"
                       required
                       value={formData.application_khatian}
-                      onChange={(e) =>
-                        setFormData({ ...formData, application_khatian: e.target.value })
-                      }
+                      onChange={(e) => updateFormField('application_khatian', e.target.value, true)}
+                      aria-invalid={!!errors.application_khatian}
+                      aria-describedby={errors.application_khatian ? 'application_khatian-error' : undefined}
                       className="min-h-[44px] w-full px-3 py-2 text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     />
+                    {errors.application_khatian && (
+                      <p id="application_khatian-error" role="alert" className="text-xs text-rose-600 dark:text-rose-400 mt-1 flex items-center gap-1 font-medium">
+                        <TriangleAlert className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+                        <span>{errors.application_khatian}</span>
+                      </p>
+                    )}
                   </Field>
 
                   <Field
@@ -780,11 +963,17 @@ export default function NewTransferPage() {
                       type="text"
                       required
                       value={formData.application_dag}
-                      onChange={(e) =>
-                        setFormData({ ...formData, application_dag: e.target.value })
-                      }
+                      onChange={(e) => updateFormField('application_dag', e.target.value, true)}
+                      aria-invalid={!!errors.application_dag}
+                      aria-describedby={errors.application_dag ? 'application_dag-error' : undefined}
                       className="min-h-[44px] w-full px-3 py-2 text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     />
+                    {errors.application_dag && (
+                      <p id="application_dag-error" role="alert" className="text-xs text-rose-600 dark:text-rose-400 mt-1 flex items-center gap-1 font-medium">
+                        <TriangleAlert className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+                        <span>{errors.application_dag}</span>
+                      </p>
+                    )}
                   </Field>
 
                   <Field
@@ -798,18 +987,74 @@ export default function NewTransferPage() {
                       step="0.01"
                       required
                       value={formData.application_area_decimal}
-                      onChange={(e) =>
-                        setFormData({ ...formData, application_area_decimal: e.target.value })
-                      }
+                      onChange={(e) => updateFormField('application_area_decimal', e.target.value, true)}
+                      aria-invalid={!!errors.application_area_decimal}
+                      aria-describedby={errors.application_area_decimal ? 'application_area_decimal-error' : undefined}
                       className="min-h-[44px] w-full px-3 py-2 text-sm rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     />
+                    {errors.application_area_decimal && (
+                      <p id="application_area_decimal-error" role="alert" className="text-xs text-rose-600 dark:text-rose-400 mt-1 flex items-center gap-1 font-medium">
+                        <TriangleAlert className="w-3.5 h-3.5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+                        <span>{errors.application_area_decimal}</span>
+                      </p>
+                    )}
                   </Field>
                 </div>
 
-                {/* Summary Box */}
+                <div className="flex flex-col sm:flex-row justify-between items-center gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="md"
+                    onClick={() => {
+                      setErrors({});
+                      setCurrentStep(2);
+                    }}
+                    className="w-full sm:w-auto min-h-[44px]"
+                    icon={<ArrowLeft className="w-4 h-4" strokeWidth={1.75} aria-hidden="true" />}
+                  >
+                    {bn ? 'পূর্ববর্তী ধাপ' : 'Previous Step'}
+                  </Button>
+
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="md"
+                    onClick={handleProceedToStep4}
+                    className="w-full sm:w-auto min-h-[44px]"
+                    icon={<ArrowRight className="w-4 h-4" strokeWidth={1.75} aria-hidden="true" />}
+                  >
+                    {bn ? 'পরবর্তী: পর্যালোচনা ও দাখিল' : 'Next: Review & Submit'}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 4: REVIEW & SUBMIT */}
+            {currentStep === 4 && (
+              <div className="space-y-6">
+                <div className="border-b border-slate-200 dark:border-slate-800 pb-3">
+                  <h2 className="text-lg font-bold text-slate-900 dark:text-white">
+                    {bn ? 'ধাপ ৪: রেকর্ডসমূহের তুলনা ও দাখিল' : 'Step 4: Record Comparison & Submission'}
+                  </h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    {bn
+                      ? 'দাখিলের পূর্বে রেজিস্ট্রি, দলিল ও আবেদনের তথ্যের পাশাপাশি তুলনা যাচাই করুন।'
+                      : 'Review the side-by-side comparison of registry, deed, and application records before submission.'}
+                  </p>
+                </div>
+
+                {/* Side-by-Side Comparison Component */}
+                <RecordComparison
+                  registry={selectedParcel}
+                  deed={formData}
+                  application={formData}
+                />
+
+                {/* Summary Meta Card */}
                 <div className="p-4 rounded-md bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2 text-xs">
                   <span className="font-semibold text-slate-500 uppercase tracking-wide text-[11px] block">
-                    {bn ? 'দাখিলকৃত তথ্যের সারসংক্ষেপ:' : 'Application Summary Before Submission:'}
+                    {bn ? 'দাখিলকৃত আবেদনের সারাংশ:' : 'Application Metadata:'}
                   </span>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     <div>
@@ -836,9 +1081,12 @@ export default function NewTransferPage() {
                     type="button"
                     variant="secondary"
                     size="md"
-                    onClick={() => setCurrentStep(2)}
+                    onClick={() => {
+                      setErrors({});
+                      setCurrentStep(3);
+                    }}
                     disabled={submitting}
-                    className="w-full sm:w-auto"
+                    className="w-full sm:w-auto min-h-[44px]"
                     icon={<ArrowLeft className="w-4 h-4" strokeWidth={1.75} aria-hidden="true" />}
                   >
                     {bn ? 'পূর্ববর্তী ধাপ' : 'Previous Step'}
@@ -850,7 +1098,7 @@ export default function NewTransferPage() {
                     size="md"
                     loading={submitting}
                     disabled={submitting}
-                    className="w-full sm:w-auto"
+                    className="w-full sm:w-auto min-h-[44px]"
                     icon={<FileText className="w-4 h-4" strokeWidth={1.75} aria-hidden="true" />}
                   >
                     {submitting
