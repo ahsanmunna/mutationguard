@@ -19,10 +19,13 @@ import {
 } from 'lucide-react';
 import StatusBadge from '@/components/StatusBadge';
 import ConflictAlert from '@/components/ConflictAlert';
+import RecordComparison from '@/components/RecordComparison';
+import ParcelTimeline from '@/components/ParcelTimeline';
 import { Button } from '@/components/ui';
 import { useLanguage } from '@/components/LanguageContext';
 import { localName, formatNumber, formatDate, formatCount } from '@/lib/i18n/translations';
 import { useCurrentUser } from '@/lib/use-current-user';
+import { buildDetailComparison, buildTimelineEvents } from '@/lib/transfer-view';
 
 export default function TransferDetailPage() {
   const params = useParams();
@@ -33,6 +36,7 @@ export default function TransferDetailPage() {
 
   const [transfer, setTransfer] = useState<any>(null);
   const [ownershipHistory, setOwnershipHistory] = useState<any[]>([]);
+  const [historyFailed, setHistoryFailed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -46,6 +50,7 @@ export default function TransferDetailPage() {
     try {
       setLoading(true);
       setErrorMsg(null);
+      setHistoryFailed(false);
       const res = await fetch(`/api/transfers/${id}`);
       const data = await res.json();
       if (!res.ok) {
@@ -59,9 +64,13 @@ export default function TransferDetailPage() {
           const pubData = await pubRes.json();
           if (pubRes.ok && Array.isArray(pubData.ownership_history)) {
             setOwnershipHistory(pubData.ownership_history);
+            setHistoryFailed(false);
+          } else {
+            setHistoryFailed(true);
           }
         } catch {
           // Non-fatal if public verification metadata fails
+          setHistoryFailed(true);
         }
       }
     } catch (err: any) {
@@ -398,6 +407,25 @@ export default function TransferDetailPage() {
         <ConflictAlert findings={transfer.findings || []} />
       </section>
 
+      {/* Record Comparison Section */}
+      <section className="p-5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-4">
+        <h3 className="font-bold text-sm text-slate-900 dark:text-white border-b border-slate-200 dark:border-slate-800 pb-2">
+          {bn ? 'রেকর্ডের তুলনা' : 'Record comparison'}
+        </h3>
+        <RecordComparison
+          rows={buildDetailComparison({
+            transfer,
+            history: historyFailed ? [] : ownershipHistory,
+          })}
+          language={language}
+        />
+        <p className="text-xs text-slate-500 dark:text-slate-400">
+          {bn
+            ? 'প্রদর্শিত রেজিস্ট্রি মালিক আবেদন দাখিলের সময়কালীন মালিক; অন্যান্য রেজিস্ট্রি তথ্য বর্তমান। উপরের নীতিমালার ফলাফলসমূহ কর্তৃত্বপূর্ণ প্রমাণ।'
+            : 'The registry owner shown is the owner at the time of submission; other registry fields are current. The rule findings above are the authoritative evidence.'}
+        </p>
+      </section>
+
       {/* Two Column Definition Lists: Deed & Application vs Registry */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Deed and Application Details */}
@@ -502,29 +530,16 @@ export default function TransferDetailPage() {
         <h3 className="font-bold text-sm text-slate-900 dark:text-white border-b border-slate-200 dark:border-slate-800 pb-2">
           {bn ? 'মালিকানার ইতিহাস ও টাইমলাইন' : 'Ownership History & Timeline'}
         </h3>
-        {ownershipHistory && ownershipHistory.length > 0 ? (
-          <ol className="space-y-3 border-l-2 border-emerald-500 pl-4 text-xs">
-            {ownershipHistory.map((h: any, i: number) => (
-              <li key={i} className="relative space-y-1">
-                <span className="absolute -left-[21px] top-1 w-2.5 h-2.5 rounded-full bg-emerald-600 ring-4 ring-white dark:ring-slate-900" />
-                <div className="font-semibold text-slate-900 dark:text-white">
-                  {localName(h.previous_owner_name, language)} → {localName(h.new_owner_name, language)}
-                </div>
-                <div className="text-[11px] text-slate-500 font-mono flex items-center gap-2">
-                  <span>{h.deed_number}</span>
-                  <span>•</span>
-                  <span>{formatDate(h.recorded_at, language)}</span>
-                </div>
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <p className="text-xs text-slate-500 dark:text-slate-400">
-            {bn
-              ? 'এই পার্সেলের জন্য পূর্বে কোনো মালিকানা পরিবর্তন নথিভুক্ত নেই।'
-              : 'No prior ownership changes recorded for this parcel.'}
-          </p>
-        )}
+        <ParcelTimeline
+          events={
+            historyFailed
+              ? []
+              : buildTimelineEvents({ history: ownershipHistory, transfer })
+          }
+          currentOwnerName={transfer.registry_owner_name}
+          language={language}
+          unavailable={historyFailed}
+        />
       </section>
     </div>
   );
