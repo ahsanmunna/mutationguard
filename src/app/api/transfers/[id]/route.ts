@@ -41,8 +41,7 @@ export async function GET(
               p.current_owner_name as registry_owner_name, p.current_owner_nid as registry_owner_nid,
               d.deed_hash, d.deed_date,
               d.mouza AS deed_mouza, d.khatian AS deed_khatian, d.dag AS deed_dag,
-              d.area_decimal AS deed_area_decimal, d.seller_name AS deed_seller_name,
-              d.seller_nid AS deed_seller_nid
+              d.area_decimal AS deed_area_decimal, d.seller_name AS deed_seller_name
        FROM transfers t
        JOIN parcels p ON t.parcel_id = p.id
        JOIN deeds d ON t.deed_id = d.id

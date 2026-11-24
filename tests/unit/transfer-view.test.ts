@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   ownerAtSubmission,
+  registryOwnerStatus,
   buildDetailComparison,
   buildTimelineEvents,
 } from '../../src/lib/transfer-view';
@@ -270,6 +271,138 @@ describe('Transfer View Pure Utilities (Unit Tests)', () => {
       expect(areaRow).toBeDefined();
       expect(areaRow?.differs).toBe(false);
     });
+
+    it('history [] or failed -> seller row differs=false and registry shown as unknown (no false difference even when registry_owner_name is a different person than the deed seller)', () => {
+      const transfer = {
+        id: 'TR-2026-TEST1',
+        status: 'under_review',
+        created_at: '2026-03-01T00:00:00Z',
+        registry_owner_name: 'Current Different Owner',
+        registry_mouza: 'Dhanmondi-102',
+        registry_khatian: 'K-501',
+        registry_dag: 'D-1001',
+        registry_area: '5.00',
+        deed_seller_name: 'Original Deed Seller',
+        deed_mouza: 'Dhanmondi-102',
+        deed_khatian: 'K-501',
+        deed_dag: 'D-1001',
+        deed_area_decimal: '5.00',
+        application_mouza: 'Dhanmondi-102',
+        application_khatian: 'K-501',
+        application_dag: 'D-1001',
+        application_area_decimal: '5.00',
+      };
+
+      // history is empty array []
+      const rowsEmpty = buildDetailComparison({ transfer, history: [] });
+      const sellerRowEmpty = rowsEmpty.find((r) => r.field === 'seller');
+      expect(sellerRowEmpty).toBeDefined();
+      expect(sellerRowEmpty?.differs).toBe(false);
+      expect(sellerRowEmpty?.registry).toBe('—');
+      expect(sellerRowEmpty?.registryValue).toBe('—');
+      expect(registryOwnerStatus([], transfer.created_at)).toBe('unknown');
+
+      // history failed / null
+      const rowsNull = buildDetailComparison({ transfer, history: null });
+      const sellerRowNull = rowsNull.find((r) => r.field === 'seller');
+      expect(sellerRowNull).toBeDefined();
+      expect(sellerRowNull?.differs).toBe(false);
+      expect(sellerRowNull?.registry).toBe('—');
+      expect(sellerRowNull?.registryValue).toBe('—');
+      expect(registryOwnerStatus(null, transfer.created_at)).toBe('unknown');
+
+      // history omitted / undefined
+      const rowsUndef = buildDetailComparison({ transfer });
+      const sellerRowUndef = rowsUndef.find((r) => r.field === 'seller');
+      expect(sellerRowUndef).toBeDefined();
+      expect(sellerRowUndef?.differs).toBe(false);
+      expect(sellerRowUndef?.registry).toBe('—');
+      expect(sellerRowUndef?.registryValue).toBe('—');
+      expect(registryOwnerStatus(undefined, transfer.created_at)).toBe('unknown');
+    });
+
+    it('created_at earlier than every history row -> same unknown behaviour', () => {
+      const history = [
+        {
+          previous_owner_name: 'Original State Allotment',
+          new_owner_name: 'Rahim Uddin',
+          recorded_at: '2020-01-15T10:00:00Z',
+        },
+      ];
+
+      const transfer = {
+        id: 'TR-2026-TEST2',
+        status: 'under_review',
+        created_at: '2015-01-01T00:00:00Z', // Before first history row
+        registry_owner_name: 'Rahim Uddin',
+        registry_mouza: 'Dhanmondi-102',
+        registry_khatian: 'K-501',
+        registry_dag: 'D-1001',
+        registry_area: '5.00',
+        deed_seller_name: 'Someone Else',
+        deed_mouza: 'Dhanmondi-102',
+        deed_khatian: 'K-501',
+        deed_dag: 'D-1001',
+        deed_area_decimal: '5.00',
+        application_mouza: 'Dhanmondi-102',
+        application_khatian: 'K-501',
+        application_dag: 'D-1001',
+        application_area_decimal: '5.00',
+      };
+
+      const rows = buildDetailComparison({ transfer, history });
+      const sellerRow = rows.find((r) => r.field === 'seller');
+      expect(sellerRow).toBeDefined();
+      expect(sellerRow?.differs).toBe(false);
+      expect(sellerRow?.registry).toBe('—');
+      expect(sellerRow?.registryValue).toBe('—');
+      expect(registryOwnerStatus(history, transfer.created_at)).toBe('unknown');
+    });
+
+    it('created_at exactly equal to a history row\'s recorded_at -> that row\'s owner is used', () => {
+      const history = [
+        {
+          previous_owner_name: 'Original State Allotment',
+          new_owner_name: 'Rahim Uddin',
+          recorded_at: '2020-01-15T10:00:00Z',
+        },
+        {
+          previous_owner_name: 'Rahim Uddin',
+          new_owner_name: 'Karim Chowdhury',
+          recorded_at: '2026-03-01T12:00:00Z',
+        },
+      ];
+
+      const exactDate = '2026-03-01T12:00:00Z';
+      expect(ownerAtSubmission(history, exactDate)).toBe('Karim Chowdhury');
+      expect(registryOwnerStatus(history, exactDate)).toBe('known');
+
+      const transfer = {
+        id: 'TR-2026-TEST3',
+        status: 'under_review',
+        created_at: exactDate,
+        registry_owner_name: 'Karim Chowdhury',
+        registry_mouza: 'Dhanmondi-102',
+        registry_khatian: 'K-501',
+        registry_dag: 'D-1001',
+        registry_area: '5.00',
+        deed_seller_name: 'Karim Chowdhury',
+        deed_mouza: 'Dhanmondi-102',
+        deed_khatian: 'K-501',
+        deed_dag: 'D-1001',
+        deed_area_decimal: '5.00',
+        application_mouza: 'Dhanmondi-102',
+        application_khatian: 'K-501',
+        application_dag: 'D-1001',
+        application_area_decimal: '5.00',
+      };
+
+      const rows = buildDetailComparison({ transfer, history });
+      const sellerRow = rows.find((r) => r.field === 'seller');
+      expect(sellerRow).toBeDefined();
+      expect(sellerRow?.registryValue).toBe('Karim Chowdhury');
+      expect(sellerRow?.differs).toBe(false);
+    });
   });
 
   describe('buildTimelineEvents', () => {
@@ -427,6 +560,78 @@ describe('Transfer View Pure Utilities (Unit Tests)', () => {
       };
       const finEvents = buildTimelineEvents({ history: [], transfer: finTransfer });
       expect(finEvents).toEqual([]);
+    });
+
+    it('a held transfer created in March with a later ownership change in June -> events order is baseline, application (held), ownership_change', () => {
+      const history = [
+        {
+          previous_owner_name: 'Original State Allotment',
+          new_owner_name: 'Rahim Uddin',
+          recorded_at: '2020-01-15T10:00:00Z',
+          deed_number: 'DEED-2020-001',
+        },
+        {
+          previous_owner_name: 'Rahim Uddin',
+          new_owner_name: 'Karim Chowdhury',
+          transfer_id: 'TR-OTHER-99',
+          recorded_at: '2026-06-01T12:00:00Z',
+        },
+      ];
+
+      const transfer = {
+        id: 'TR-HELD-001',
+        status: 'held',
+        created_at: '2026-03-01T00:00:00Z',
+        seller_name: 'Rahim Uddin',
+        buyer_name: 'Anisul Huq',
+      };
+
+      const events = buildTimelineEvents({ history, transfer });
+      expect(events).toHaveLength(3);
+      expect(events[0].kind).toBe('baseline');
+      expect(events[0].ownerTo).toBe('Rahim Uddin');
+
+      expect(events[1].kind).toBe('application');
+      expect(events[1].status).toBe('held');
+      expect(events[1].reference).toBe('TR-HELD-001');
+      expect(events[1].isThisTransfer).toBe(true);
+
+      expect(events[2].kind).toBe('ownership_change');
+      expect(events[2].ownerTo).toBe('Karim Chowdhury');
+    });
+
+    it('invalid created_at -> application event is last, no crash', () => {
+      const history = [
+        {
+          previous_owner_name: 'Original Allotment',
+          new_owner_name: 'Rahim Uddin',
+          deed_number: 'DEED-2020-001',
+          recorded_at: '2020-01-15T10:00:00Z',
+        },
+        {
+          previous_owner_name: 'Rahim Uddin',
+          new_owner_name: 'Karim Chowdhury',
+          transfer_id: 'TR-OTHER-99',
+          recorded_at: '2026-06-01T12:00:00Z',
+        },
+      ];
+
+      const transferInvalidDate = {
+        id: 'TR-INV-001',
+        status: 'under_review',
+        created_at: 'not-a-valid-date-string',
+        seller_name: 'Rahim Uddin',
+        buyer_name: 'Anisul Huq',
+      };
+
+      expect(() => buildTimelineEvents({ history, transfer: transferInvalidDate })).not.toThrow();
+      const events = buildTimelineEvents({ history, transfer: transferInvalidDate });
+      expect(events).toHaveLength(3);
+      expect(events[0].kind).toBe('baseline');
+      expect(events[1].kind).toBe('ownership_change');
+      expect(events[2].kind).toBe('application');
+      expect(events[2].reference).toBe('TR-INV-001');
+      expect(events[2].status).toBe('under_review');
     });
   });
 });

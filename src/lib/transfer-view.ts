@@ -63,8 +63,21 @@ export function ownerAtSubmission(
 }
 
 /**
+ * Returns 'known' if the registry owner at the time of submission can be determined from history,
+ * or 'unknown' if history is missing, empty, or has no row at or before createdAt.
+ */
+export function registryOwnerStatus(
+  history: Array<{ recorded_at?: string | Date; new_owner_name?: string; [key: string]: any }> | undefined | null,
+  createdAt: string | Date | undefined | null
+): 'known' | 'unknown' {
+  return ownerAtSubmission(history, createdAt) !== null ? 'known' : 'unknown';
+}
+
+/**
  * Builds the 3-way comparison rows (Registry | Deed | Application) for the transfer detail page.
- * Registry current_owner_name is resolved as the owner at the time of submission (or fallback).
+ * Registry current_owner_name is resolved as the owner at the time of submission.
+ * When unknown, the seller row does not claim a difference against the current registry owner,
+ * and the registry value is shown as an em dash.
  * NIDs are omitted so the review compares recorded particulars without requiring stored submission NIDs.
  */
 export function buildDetailComparison(params: {
@@ -73,15 +86,14 @@ export function buildDetailComparison(params: {
 }): ComparisonRow[] {
   const { transfer, history } = params;
 
-  const currentOwner =
-    ownerAtSubmission(history, transfer?.created_at) ?? transfer?.registry_owner_name ?? '';
+  const resolvedOwner = ownerAtSubmission(history, transfer?.created_at);
 
   const registry = {
     mouza: transfer?.registry_mouza,
     khatian: transfer?.registry_khatian,
     dag: transfer?.registry_dag,
     area_decimal: transfer?.registry_area,
-    current_owner_name: currentOwner,
+    current_owner_name: resolvedOwner ?? '',
   };
 
   const deed = {
@@ -107,13 +119,30 @@ export function buildDetailComparison(params: {
     application_area_decimal: transfer?.application_area_decimal ?? transfer?.area_decimal,
   };
 
-  return compareRecords({ registry, deed, application });
+  const rows = compareRecords({ registry, deed, application });
+
+  if (resolvedOwner === null) {
+    return rows.map((row) => {
+      if (row.field === 'seller') {
+        return {
+          ...row,
+          registry: '—',
+          registryValue: '—',
+          differs: false,
+          registrySub: undefined,
+        };
+      }
+      return row;
+    });
+  }
+
+  return rows;
 }
 
 /**
  * Builds an ordered list of timeline events (oldest to newest) from ownership history and transfer state.
  * Baseline is the first history row with no transfer_id; other history rows are ownership changes.
- * If the transfer is not yet finalized, an application event is appended.
+ * If the transfer is not yet finalized, an application event is inserted chronologically by transfer.created_at.
  */
 export function buildTimelineEvents(params: {
   history?: Array<Record<string, any>> | null;
@@ -156,7 +185,7 @@ export function buildTimelineEvents(params: {
   }
 
   if (transfer && transfer.status !== 'finalized') {
-    events.push({
+    const appEvent: TimelineEvent = {
       kind: 'application',
       date: transfer.created_at,
       ownerFrom: transfer.seller_name,
@@ -164,7 +193,29 @@ export function buildTimelineEvents(params: {
       reference: transfer.id,
       status: transfer.status,
       isThisTransfer: true,
-    });
+    };
+
+    const createdTime = transfer.created_at
+      ? (transfer.created_at instanceof Date
+          ? transfer.created_at.getTime()
+          : new Date(transfer.created_at).getTime())
+      : NaN;
+
+    if (Number.isNaN(createdTime)) {
+      events.push(appEvent);
+    } else {
+      let insertIndex = events.length;
+      for (let i = 0; i < events.length; i++) {
+        const rowTime = events[i].date instanceof Date
+          ? (events[i].date as Date).getTime()
+          : new Date(events[i].date).getTime();
+        if (!Number.isNaN(rowTime) && rowTime > createdTime) {
+          insertIndex = i;
+          break;
+        }
+      }
+      events.splice(insertIndex, 0, appEvent);
+    }
   }
 
   return events;

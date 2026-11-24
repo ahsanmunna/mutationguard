@@ -25,7 +25,11 @@ import { Button } from '@/components/ui';
 import { useLanguage } from '@/components/LanguageContext';
 import { localName, formatNumber, formatDate, formatCount } from '@/lib/i18n/translations';
 import { useCurrentUser } from '@/lib/use-current-user';
-import { buildDetailComparison, buildTimelineEvents } from '@/lib/transfer-view';
+import {
+  buildDetailComparison,
+  buildTimelineEvents,
+  registryOwnerStatus,
+} from '@/lib/transfer-view';
 
 export default function TransferDetailPage() {
   const params = useParams();
@@ -420,9 +424,13 @@ export default function TransferDetailPage() {
           language={language}
         />
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          {bn
-            ? 'প্রদর্শিত রেজিস্ট্রি মালিক আবেদন দাখিলের সময়কালীন মালিক; অন্যান্য রেজিস্ট্রি তথ্য বর্তমান। উপরের নীতিমালার ফলাফলসমূহ কর্তৃত্বপূর্ণ প্রমাণ।'
-            : 'The registry owner shown is the owner at the time of submission; other registry fields are current. The rule findings above are the authoritative evidence.'}
+          {(historyFailed || registryOwnerStatus(ownershipHistory, transfer.created_at) === 'unknown')
+            ? (bn
+                ? 'আবেদন দাখিলের সময়কালীন রেজিস্ট্রি মালিক নির্ধারণ করা যায়নি, তাই বিক্রেতার সারি তুলনা করা হয়নি। উপরের নীতিমালার ফলাফলসমূহ কর্তৃত্বপূর্ণ প্রমাণ।'
+                : 'The registry owner at the time of submission could not be determined, so the seller row is not compared. The rule findings above are the authoritative evidence.')
+            : (bn
+                ? 'প্রদর্শিত রেজিস্ট্রি মালিক আবেদন দাখিলের সময়কালীন মালিক; অন্যান্য রেজিস্ট্রি তথ্য বর্তমান। বিক্রেতার সারিতে শুধুমাত্র নাম তুলনা করা হয়েছে। উপরের নীতিমালার ফলাফলসমূহ কর্তৃত্বপূর্ণ প্রমাণ।'
+                : 'The registry owner shown is the owner at the time of submission; other registry fields are current. The seller row compares names only. The rule findings above are the authoritative evidence.')}
         </p>
       </section>
 
