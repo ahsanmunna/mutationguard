@@ -107,7 +107,12 @@ export function RecordComparison({
                   )}
                 </td>
                 <td className="py-2.5 px-3 text-slate-700 dark:text-slate-300">
-                  {formatDisplay(row.field, row.application)}
+                  <div>{formatDisplay(row.field, row.application)}</div>
+                  {row.field === 'mouza' && (
+                    <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
+                      {bn ? 'নিয়মে তুলনা করা হয় না' : 'not compared by the rules'}
+                    </div>
+                  )}
                 </td>
                 <td className="py-2.5 px-3 text-right whitespace-nowrap">
                   {row.differs ? (
@@ -158,40 +163,45 @@ export function RecordComparison({
 
             <div className="grid grid-cols-1 gap-1.5 pt-0.5">
               <div className="flex items-baseline justify-between gap-2">
-                <span className="text-slate-500 font-medium shrink-0">
+                <div className="text-slate-500 font-medium shrink-0">
                   {bn ? 'রেজিস্ট্রি:' : 'Registry:'}
-                </span>
-                <span className="text-slate-900 dark:text-white text-right font-medium">
+                </div>
+                <div className="text-slate-900 dark:text-white text-right font-medium">
                   <div>{formatDisplay(row.field, row.registry)}</div>
                   {row.registrySub && (
                     <div className="font-mono text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                       {row.registrySub}
                     </div>
                   )}
-                </span>
+                </div>
               </div>
 
               <div className="flex items-baseline justify-between gap-2">
-                <span className="text-slate-500 font-medium shrink-0">
+                <div className="text-slate-500 font-medium shrink-0">
                   {bn ? 'দলিল:' : 'Deed:'}
-                </span>
-                <span className="text-slate-900 dark:text-white text-right font-medium">
+                </div>
+                <div className="text-slate-900 dark:text-white text-right font-medium">
                   <div>{formatDisplay(row.field, row.deed)}</div>
                   {row.deedSub && (
                     <div className="font-mono text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                       {row.deedSub}
                     </div>
                   )}
-                </span>
+                </div>
               </div>
 
               <div className="flex items-baseline justify-between gap-2">
-                <span className="text-slate-500 font-medium shrink-0">
+                <div className="text-slate-500 font-medium shrink-0">
                   {bn ? 'আবেদন:' : 'Application:'}
-                </span>
-                <span className="text-slate-900 dark:text-white text-right font-medium">
-                  {formatDisplay(row.field, row.application)}
-                </span>
+                </div>
+                <div className="text-slate-900 dark:text-white text-right font-medium">
+                  <div>{formatDisplay(row.field, row.application)}</div>
+                  {row.field === 'mouza' && (
+                    <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5 font-normal">
+                      {bn ? 'নিয়মে তুলনা করা হয় না' : 'not compared by the rules'}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -224,7 +234,9 @@ export function RecordComparison({
           {diffCount > 0
             ? (bn
                 ? `${formatCount(diffCount, 'bn')}টি সম্ভাব্য অমিল পাওয়া গেছে। আবেদন দাখিল করার সময় নিয়মগুলো এগুলো যাচাই করবে এবং পর্যালোচনার জন্য আবেদনটি স্থগিত রাখার সম্ভাবনা রয়েছে।`
-                : `${formatCount(diffCount, 'en')} potential difference(s) found. The rules check these when you submit and are likely to hold this application for review.`)
+                : (diffCount === 1
+                    ? '1 potential difference found. The rules check these when you submit and are likely to hold this application for review.'
+                    : `${formatCount(diffCount, 'en')} potential differences found. The rules check these when you submit and are likely to hold this application for review.`))
             : (bn
                 ? 'তিনটি রেকর্ডের তথ্যে মিল রয়েছে। আবেদন দাখিল করার সময় অন্যান্য যাচাই, যেমন এই প্লটে বিদ্যমান সক্রিয় হস্তান্তর, পরিচালিত হবে।'
                 : 'The three records agree. Other checks, such as an existing active transfer on this parcel, run when you submit.')}
