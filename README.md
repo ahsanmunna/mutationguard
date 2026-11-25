@@ -41,6 +41,7 @@ MutationGuard does not claim to solve these problems. It targets one cause: tran
 - **Detects conflicting transfers** involving the same parcel.
 - **Checks the seller** against the parcel's recorded owner.
 - **Compares records** to find discrepancies between deeds, registry information, and mutation applications.
+- **Shows the comparison side by side** (registry, deed and application) before submission and again on each stored transfer, together with a timeline of the parcel's ownership history.
 - **Explains every finding** with the rule triggered and the relevant expected and observed values.
 - **Keeps a signed audit trail** so unauthorized changes to recorded data can be detected.
 - **Supports public verification** through a record page reachable by QR code, without logging in.
@@ -99,7 +100,7 @@ Open https://mutationguard.vercel.app and go to **Login**. Use the one-click dem
 | `officer_farhan` | Reviewer |
 | `rahim_uddin`, `karim_chowdhury`, `hasan_mahmud` | Applicants |
 
-Log in as the reviewer, open **Demo panel**, press **Reset demo data**, then run the steps in order:
+Log in as the reviewer, open **Demo panel**, press **Reset All Data to Clean Seed**, then run the steps in order:
 
 | Step | What happens | Expected result |
 |---|---|---|
@@ -108,9 +109,9 @@ Log in as the reviewer, open **Demo panel**, press **Reset demo data**, then run
 | 3 | Reviewer finalizes Karim's transfer | Owner becomes Karim; ownership history updated |
 | 4 | Rahim tries to sell P-001 again | **Held**, `WRONG_SELLER` |
 | 5 | Parcel P-002: deed claims a larger area and a different dag | **Held**, `RECORD_MISMATCH` lists each differing field |
-| Two at once | Two conflicting requests for P-001 at the same moment | Exactly one is active, the other is held |
+| Concurrency test | Two conflicting requests for parcel P-003 at the same moment | Exactly one is active, the other is held |
 
-Then open **Audit integrity**: press *Verify* (green), press **Tamper with deed** (edits a deed's area directly in our own database), and verify again. It turns red and names the deed, the field, and the expected and calculated values. Press **Reset demo data** to restore. Finally, open a transfer and its public QR certificate (`/verify/<id>`) to see the public verification page.
+Then open **Audit integrity**: press *Verify* (green), press **Tamper with deed** (edits a deed's area directly in our own database), and verify again. It turns red and names the deed, the field, and the expected and calculated values. Press **Reset All Data to Clean Seed** to restore. Finally, open a transfer and its public QR certificate (`/verify/<id>`) to see the public verification page.
 
 All records are fictional, and results depend on the demo database state, so reset before presenting.
 
@@ -234,7 +235,7 @@ $env:NODE_ENV="test"; $env:MUTATIONGUARD_ALLOW_DB_WRITE="true"; npm run test:db
 
 (macOS/Linux: `NODE_ENV=test MUTATIONGUARD_ALLOW_DB_WRITE=true npm run test:db`)
 
-The suite has 57 unit test cases and 20 database/concurrency test cases. They cover the three rules, blocked stage skipping, role checks, integrity-check failures (including a block re-signed with an attacker's key), stale finalization, 20 rounds of simultaneous conflicting requests, and login and session checks. All of them pass on our machine at the submitted commit.
+The suite has 181 unit tests (`npm run check`) and 42 database and concurrency tests (`npm run test:db`). They cover the three rules, blocked stage skipping, role checks, integrity-check failures (including a block re-signed with an attacker's key and tampered ownership history), stale finalization, the record-comparison and ownership-timeline logic, the transfer detail API, a 20-round simultaneous-request test, and login and session checks. All of them passed in our most recent local runs.
 
 These are synthetic test cases. They show that the rules and protections behave as designed on made-up data. They are not a measure of real-world fraud-detection accuracy.
 
@@ -330,7 +331,16 @@ tests/               Unit, database and concurrency tests
 
 ## Changes after Round 1
 
-_None yet. Changes made for the Final Round will be listed here, with a short description and the relevant commit._
+Changes made since the Round 1 submission (git tag `round1-submission`). Each item lists its commits.
+
+- **Interface redesign.** Simpler layout, new logo, Bangla-first pages, redesigned login, dashboard, transfer wizard, detail and public verification pages, integrity page and demo panel (`2ddb21d`, `a9d2549`, `76dee36`, `eba3b38`). A follow-up fixed logo access for logged-out visitors and a demo step that picked the wrong transfer (`bf0e793`).
+- **Independent deed values, no NIDs on the public endpoint, shared demo parcels.** Deed values are compared separately from application values, national ID numbers were removed from the public verification endpoint, and the demo parcels now come from a single source (`f8741b6`).
+- **Ownership-history integrity.** Verify Integrity now also checks each parcel's ownership history against its recorded baseline owner and the signed `TRANSFER_FINALIZED` events, and reports the first failure (`da2530d`, `464aa38`, merge `ef5ae50`).
+- **Demo reliability.** Demo steps 1-5 check their own outcomes, the simultaneous-request test runs on its own parcel (P-003), and the demo can be reset to a clean state (`e7852a5`, `1c97290`, merge `2e04d9c`).
+- **Four-step transfer wizard.** The new-transfer screen shows registry, deed and application values side by side before submission, using the same comparison logic as the rules (`a2aaf1d`, `5167182`, merge `65b1626`).
+- **Record comparison and ownership timeline on the transfer detail page.** Registry, deed and application values are shown side by side from stored data. The registry owner is the owner at the time of submission, derived from ownership history, so a held transfer does not show a false difference after a later transfer is finalized. If that owner cannot be determined, the seller row says so instead of comparing. Pending, held and rejected applications are marked as "not an ownership change" (`7e181ab`, `aebd1c3`, merge `dc44871`).
+- **Tests.** The suite grew to 181 unit and 42 database tests.
+- **Housekeeping.** README updates (`eb1e769`, `b6316f5`) and removal of a stale handoff file (this change).
 
 ---
 
