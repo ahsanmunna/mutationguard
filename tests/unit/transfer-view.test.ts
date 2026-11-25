@@ -403,6 +403,53 @@ describe('Transfer View Pure Utilities (Unit Tests)', () => {
       expect(sellerRow?.registryValue).toBe('Karim Chowdhury');
       expect(sellerRow?.differs).toBe(false);
     });
+
+    it('known registry owner (from history) who is a different person than the deed seller -> seller row has differs=true', () => {
+      const history = [
+        {
+          previous_owner_name: 'Original State Allotment',
+          new_owner_name: 'Rahim Uddin',
+          recorded_at: '2020-01-15T10:00:00Z',
+        },
+        {
+          previous_owner_name: 'Rahim Uddin',
+          new_owner_name: 'Karim Chowdhury',
+          transfer_id: 'TR-2026-0002',
+          recorded_at: '2026-06-01T12:00:00Z',
+        },
+      ];
+
+      const transfer = {
+        id: 'TR-2026-TEST4',
+        status: 'held',
+        created_at: '2026-03-01T00:00:00Z',
+        registry_owner_name: 'Karim Chowdhury',
+        registry_mouza: 'Dhanmondi-102',
+        registry_khatian: 'K-501',
+        registry_dag: 'D-1001',
+        registry_area: '5.00',
+        deed_seller_name: 'Tariqul Islam',
+        deed_mouza: 'Dhanmondi-102',
+        deed_khatian: 'K-501',
+        deed_dag: 'D-1001',
+        deed_area_decimal: '5.00',
+        application_mouza: 'Dhanmondi-102',
+        application_khatian: 'K-501',
+        application_dag: 'D-1001',
+        application_area_decimal: '5.00',
+      };
+
+      expect(ownerAtSubmission(history, transfer.created_at)).toBe('Rahim Uddin');
+      expect(registryOwnerStatus(history, transfer.created_at)).toBe('known');
+
+      const rows = buildDetailComparison({ transfer, history });
+      const sellerRow = rows.find((r) => r.field === 'seller');
+
+      expect(sellerRow).toBeDefined();
+      expect(sellerRow?.registryValue).toBe('Rahim Uddin');
+      expect(sellerRow?.deedValue).toBe('Tariqul Islam');
+      expect(sellerRow?.differs).toBe(true);
+    });
   });
 
   describe('buildTimelineEvents', () => {
@@ -632,6 +679,53 @@ describe('Transfer View Pure Utilities (Unit Tests)', () => {
       expect(events[2].kind).toBe('application');
       expect(events[2].reference).toBe('TR-INV-001');
       expect(events[2].status).toBe('under_review');
+    });
+
+    it('a held transfer whose created_at equals a history row\'s recorded_at -> timeline order is that history event, then the application event (application after the tie)', () => {
+      const tiedTimestamp = '2026-03-01T12:00:00Z';
+      const history = [
+        {
+          previous_owner_name: 'Original State Allotment',
+          new_owner_name: 'Rahim Uddin',
+          deed_number: 'GOV-ALLOT-1998',
+          recorded_at: '2020-01-15T10:00:00Z',
+        },
+        {
+          previous_owner_name: 'Rahim Uddin',
+          new_owner_name: 'Karim Chowdhury',
+          transfer_id: 'TR-2026-0001',
+          deed_number: 'DEED-2026-001',
+          recorded_at: tiedTimestamp,
+        },
+        {
+          previous_owner_name: 'Karim Chowdhury',
+          new_owner_name: 'Tariqul Islam',
+          transfer_id: 'TR-2026-0003',
+          deed_number: 'DEED-2026-003',
+          recorded_at: '2026-06-01T12:00:00Z',
+        },
+      ];
+
+      const transfer = {
+        id: 'TR-HELD-TIE',
+        status: 'held',
+        created_at: tiedTimestamp,
+        seller_name: 'Rahim Uddin',
+        buyer_name: 'Hasan Mahmud',
+      };
+
+      const events = buildTimelineEvents({ history, transfer });
+
+      expect(events).toHaveLength(4);
+      expect(events[0].kind).toBe('baseline');
+      expect(events[1].kind).toBe('ownership_change');
+      expect(events[1].reference).toBe('DEED-2026-001');
+      expect(events[2].kind).toBe('application');
+      expect(events[2].status).toBe('held');
+      expect(events[2].reference).toBe('TR-HELD-TIE');
+      expect(events[2].isThisTransfer).toBe(true);
+      expect(events[3].kind).toBe('ownership_change');
+      expect(events[3].reference).toBe('DEED-2026-003');
     });
   });
 });
