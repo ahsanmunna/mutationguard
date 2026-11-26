@@ -23,7 +23,7 @@ import RecordComparison from '@/components/RecordComparison';
 import ParcelTimeline from '@/components/ParcelTimeline';
 import { Button } from '@/components/ui';
 import { useLanguage } from '@/components/LanguageContext';
-import { localName, formatNumber, formatDate, formatCount } from '@/lib/i18n/translations';
+import { localName, formatNumber, formatDate, formatOptionalDate, formatCount } from '@/lib/i18n/translations';
 import { useCurrentUser } from '@/lib/use-current-user';
 import {
   buildDetailComparison,
@@ -454,7 +454,7 @@ export default function TransferDetailPage() {
             </div>
             <div className="py-2 flex justify-between gap-2">
               <dt className="text-slate-500">{bn ? 'দলিলের তারিখ:' : 'Deed Date:'}</dt>
-              <dd className="font-mono text-slate-900 dark:text-white">{transfer.deed_date || '—'}</dd>
+              <dd className="font-mono text-slate-900 dark:text-white">{formatOptionalDate(transfer.deed_date, language)}</dd>
             </div>
             <div className="py-2 flex justify-between gap-2">
               <dt className="text-slate-500">{bn ? 'বিক্রেতা:' : 'Seller:'}</dt>

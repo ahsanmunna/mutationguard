@@ -3,21 +3,43 @@
 import React from 'react';
 import { CircleCheck, TriangleAlert, OctagonX, Search, ShieldAlert } from 'lucide-react';
 import { Finding } from '@/lib/rules/types';
+import {
+  Language,
+  formatIdentifier,
+  isIdentifier,
+  translateEvidenceMessage,
+  translateStatus,
+} from '@/lib/i18n/translations';
 import { useLanguage } from './LanguageContext';
 
 interface ConflictAlertProps {
   findings: Finding[];
+  language?: Language;
 }
 
+const STATUS_FIELD_KEYS = new Set(['status', 'active_status', 'concurrent_status']);
+const IDENTIFIER_FIELD_KEYS = new Set([
+  'parcel_id',
+  'conflict_id',
+  'active_transfer_id',
+  'conflicting_transfer_id',
+  'concurrent_transfer_id',
+  'owner_nid',
+  'seller_nid',
+]);
+
 /** Formats a known evidence / expected / observed key into friendly bilingual text. */
-function formatKey(key: string, bn: boolean): string {
+export function formatEvidenceKey(key: string, bn: boolean): string {
   const map: Record<string, { bn: string; en: string }> = {
     parcel_id: { bn: 'পার্সেল আইডি', en: 'Parcel ID' },
     parcel: { bn: 'পার্সেল / প্লট', en: 'Parcel' },
     status: { bn: 'স্ট্যাটাস', en: 'Status' },
     active_status: { bn: 'সক্রিয় স্ট্যাটাস', en: 'Active Status' },
+    concurrent_status: { bn: 'সমসাময়িক স্ট্যাটাস', en: 'Concurrent Status' },
     conflict_id: { bn: 'সংঘাতপূর্ণ হস্তান্তর আইডি', en: 'Conflicting Transfer ID' },
+    conflicting_transfer_id: { bn: 'সংঘাতপূর্ণ হস্তান্তর আইডি', en: 'Conflicting Transfer ID' },
     active_transfer_id: { bn: 'বিদ্যমান সক্রিয় হস্তান্তর আইডি', en: 'Active Transfer ID' },
+    concurrent_transfer_id: { bn: 'সমসাময়িক হস্তান্তর আইডি', en: 'Concurrent Transfer ID' },
     active_applicant: { bn: 'বিদ্যমান আবেদনকারী', en: 'Active Applicant' },
     active_transfer_count: { bn: 'সক্রিয় হস্তান্তর সংখ্যা', en: 'Active Transfer Count' },
     seller_name: { bn: 'বিক্রেতার নাম', en: 'Seller Name' },
@@ -44,16 +66,42 @@ function formatKey(key: string, bn: boolean): string {
     area_decimal: { bn: 'জমির পরিমাণ (শতক)', en: 'Area (Decimal)' },
     message: { bn: 'বিবরণ', en: 'Message' },
     rule: { bn: 'নিয়ম', en: 'Rule' },
+    source: { bn: 'উৎস', en: 'Source' },
   };
 
   if (map[key]) {
     return bn ? map[key].bn : map[key].en;
   }
+  if (!bn && /[_-]/.test(key)) {
+    return key.replace(/[_-]+/g, ' ').trim();
+  }
   return key;
 }
 
+/** Formats a scalar evidence / expected / observed value while preserving identifiers and localizing statuses and messages. */
+export function formatEvidenceScalar(key: string, val: unknown, language: Language): string {
+  if (val === null || val === undefined) {
+    return '—';
+  }
+  if (typeof val === 'boolean') {
+    return val ? (language === 'bn' ? 'হ্যাঁ' : 'Yes') : (language === 'bn' ? 'না' : 'No');
+  }
+  const str = String(val);
+  if (STATUS_FIELD_KEYS.has(key)) {
+    return translateStatus(str, language);
+  }
+  if (key === 'message') {
+    return translateEvidenceMessage(str, language);
+  }
+  if (IDENTIFIER_FIELD_KEYS.has(key) || isIdentifier(str)) {
+    return formatIdentifier(str);
+  }
+  return str;
+}
+
 /** Formats an evidence value into a clean human-readable representation without raw JSON braces. */
-function formatValue(val: any, bn: boolean): React.ReactNode {
+function formatValue(val: any, language: Language, key = ''): React.ReactNode {
+  const bn = language === 'bn';
   if (val === null || val === undefined) {
     return <span className="text-slate-400">—</span>;
   }
@@ -64,14 +112,21 @@ function formatValue(val: any, bn: boolean): React.ReactNode {
     return <span className="font-mono">{val}</span>;
   }
   if (typeof val === 'string') {
-    return <span>{val}</span>;
+    const formatted = formatEvidenceScalar(key, val, language);
+    if (STATUS_FIELD_KEYS.has(key) || key === 'message') {
+      return <span>{formatted}</span>;
+    }
+    if (IDENTIFIER_FIELD_KEYS.has(key) || isIdentifier(val)) {
+      return <span className="font-mono">{formatted}</span>;
+    }
+    return <span>{formatted}</span>;
   }
   if (Array.isArray(val)) {
     return (
       <div className="space-y-1">
         {val.map((item, idx) => {
           if (typeof item === 'object' && item !== null) {
-            const fieldLabel = item.field ? formatKey(item.field, bn) : (item.source || `Item ${idx + 1}`);
+            const fieldLabel = item.field ? formatEvidenceKey(item.field, bn) : (item.source || `Item ${idx + 1}`);
             return (
               <div key={idx} className="text-xs bg-slate-50 dark:bg-slate-950 p-2 rounded border border-slate-200 dark:border-slate-800">
                 <span className="font-semibold text-slate-800 dark:text-slate-200 block">{fieldLabel}</span>
@@ -93,8 +148,10 @@ function formatValue(val: any, bn: boolean): React.ReactNode {
       <div className="space-y-1">
         {Object.entries(val).map(([subKey, subVal]) => (
           <div key={subKey} className="flex justify-between gap-2 text-xs">
-            <span className="text-slate-500 font-mono">{formatKey(subKey, bn)}:</span>
-            <span className="font-mono text-slate-800 dark:text-slate-200">{String(subVal)}</span>
+            <span className="text-slate-500 font-mono">{formatEvidenceKey(subKey, bn)}:</span>
+            <span className="font-mono text-slate-800 dark:text-slate-200">
+              {formatEvidenceScalar(subKey, subVal, language)}
+            </span>
           </div>
         ))}
       </div>
@@ -103,8 +160,9 @@ function formatValue(val: any, bn: boolean): React.ReactNode {
   return String(val);
 }
 
-export default function ConflictAlert({ findings }: ConflictAlertProps) {
-  const { language } = useLanguage();
+export default function ConflictAlert({ findings, language: propLanguage }: ConflictAlertProps) {
+  const context = useLanguage();
+  const language = propLanguage || context?.language || 'bn';
   const bn = language === 'bn';
 
   if (!findings || findings.length === 0) {
@@ -217,10 +275,10 @@ export default function ConflictAlert({ findings }: ConflictAlertProps) {
                   {evidenceEntries.map(([k, v]) => (
                     <div key={k} className="py-1 flex flex-col sm:flex-row sm:items-start justify-between gap-1">
                       <span className="font-medium text-slate-600 dark:text-slate-400 shrink-0">
-                        {formatKey(k, bn)}:
+                        {formatEvidenceKey(k, bn)}:
                       </span>
                       <div className="text-slate-900 dark:text-slate-100 text-right sm:max-w-md">
-                        {formatValue(v, bn)}
+                        {formatValue(v, language, k)}
                       </div>
                     </div>
                   ))}
@@ -239,9 +297,15 @@ export default function ConflictAlert({ findings }: ConflictAlertProps) {
                   {typeof finding.expected === 'object' && finding.expected !== null ? (
                     Object.entries(finding.expected).map(([k, v]) => (
                       <div key={k} className="flex justify-between gap-2 py-0.5 border-b border-slate-100 dark:border-slate-800/80 last:border-b-0">
-                        <span className="text-slate-500">{formatKey(k, bn)}:</span>
-                        <span className="font-mono font-semibold text-slate-800 dark:text-slate-200">
-                          {String(v)}
+                        <span className="text-slate-500">{formatEvidenceKey(k, bn)}:</span>
+                        <span
+                          className={
+                            STATUS_FIELD_KEYS.has(k) && bn
+                              ? 'font-semibold text-slate-800 dark:text-slate-200'
+                              : 'font-mono font-semibold text-slate-800 dark:text-slate-200'
+                          }
+                        >
+                          {formatEvidenceScalar(k, v, language)}
                         </span>
                       </div>
                     ))
@@ -262,9 +326,15 @@ export default function ConflictAlert({ findings }: ConflictAlertProps) {
                   {typeof finding.observed === 'object' && finding.observed !== null ? (
                     Object.entries(finding.observed).map(([k, v]) => (
                       <div key={k} className="flex justify-between gap-2 py-0.5 border-b border-rose-100 dark:border-rose-900/40 last:border-b-0">
-                        <span className="text-rose-800 dark:text-rose-300">{formatKey(k, bn)}:</span>
-                        <span className="font-mono font-semibold text-rose-900 dark:text-rose-200">
-                          {String(v)}
+                        <span className="text-rose-800 dark:text-rose-300">{formatEvidenceKey(k, bn)}:</span>
+                        <span
+                          className={
+                            STATUS_FIELD_KEYS.has(k) && bn
+                              ? 'font-semibold text-rose-900 dark:text-rose-200'
+                              : 'font-mono font-semibold text-rose-900 dark:text-rose-200'
+                          }
+                        >
+                          {formatEvidenceScalar(k, v, language)}
                         </span>
                       </div>
                     ))
