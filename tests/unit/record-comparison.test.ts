@@ -137,4 +137,44 @@ describe('RecordComparison summary wording', () => {
       '1 potential difference recorded between these records. See the rule findings above for the review outcome.'
     );
   });
+
+  it('shows muted "not part of the application" note only on the seller row in EN and BN', () => {
+    const rows = makeRows(0);
+
+    const htmlEn = renderToStaticMarkup(
+      React.createElement(
+        LanguageProvider,
+        null,
+        React.createElement(RecordComparison, { rows, language: 'en', mode: 'stored' })
+      )
+    );
+    const rowsEn = htmlEn.match(/<tr[^>]*>[\s\S]*?<\/tr>/g) ?? [];
+    const sellerRowEn = rowsEn.find((r) => r.includes('Seller / Owner'));
+    expect(sellerRowEn).toBeDefined();
+    expect(sellerRowEn).toContain('—');
+    expect(sellerRowEn).toContain('not part of the application');
+    // Desktop table has 1 seller row note + mobile block has 1 seller row note = 2 occurrences total
+    expect(htmlEn.match(/not part of the application/g)).toHaveLength(2);
+    expect(htmlEn.match(/not compared by the rules/g)).toHaveLength(2);
+
+    const khatianRowEn = rowsEn.find((r) => r.includes('>Khatian<'));
+    expect(khatianRowEn).toBeDefined();
+    expect(khatianRowEn).not.toContain('not part of the application');
+    expect(khatianRowEn).not.toContain('not compared by the rules');
+
+    const htmlBn = renderToStaticMarkup(
+      React.createElement(
+        LanguageProvider,
+        null,
+        React.createElement(RecordComparison, { rows, language: 'bn', mode: 'stored' })
+      )
+    );
+    const rowsBn = htmlBn.match(/<tr[^>]*>[\s\S]*?<\/tr>/g) ?? [];
+    const sellerRowBn = rowsBn.find((r) => r.includes('বিক্রেতা / মালিক'));
+    expect(sellerRowBn).toBeDefined();
+    expect(sellerRowBn).toContain('—');
+    expect(sellerRowBn).toContain('আবেদনের অংশ নয়');
+    expect(htmlBn.match(/আবেদনের অংশ নয়/g)).toHaveLength(2);
+    expect(htmlBn.match(/নিয়মে তুলনা করা হয় না/g)).toHaveLength(2);
+  });
 });

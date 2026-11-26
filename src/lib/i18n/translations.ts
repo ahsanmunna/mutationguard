@@ -75,6 +75,42 @@ export function formatDate(dateStr: string, lang: Language): string {
   }
 }
 
+/**
+ * Formats an optional date value using formatDate, returning fallback ('—') when missing or empty.
+ */
+export function formatOptionalDate(
+  value: string | Date | null | undefined,
+  lang: Language,
+  fallback = '—'
+): string {
+  if (value === null || value === undefined) return fallback;
+  const raw =
+    value instanceof Date
+      ? Number.isNaN(value.getTime())
+        ? ''
+        : value.toISOString()
+      : String(value).trim();
+  if (!raw) return fallback;
+  const formatted = formatDate(raw, lang);
+  return formatted || fallback;
+}
+
+/**
+ * Recognizes hyphenated domain identifiers such as P-001, TR-2026-0008, DEED-2026-001, NID-DEMO-0001.
+ */
+export function isIdentifier(value: string): boolean {
+  return /^[A-Za-z]{1,10}(?:-[A-Za-z0-9]+)+$/.test(value.trim());
+}
+
+/**
+ * Formats an identifier value for display while strictly preserving hyphens.
+ */
+export function formatIdentifier(value: string | number | null | undefined, fallback = '—'): string {
+  if (value === null || value === undefined) return fallback;
+  const trimmed = String(value).trim();
+  return trimmed || fallback;
+}
+
 export const translations = {
   bn: {
     app_title: 'মিউটেশনগার্ড',
@@ -115,6 +151,9 @@ export const translations = {
     demo_resetting: 'রিসেট হচ্ছে...',
     demo_concurrent_btn: 'একই সময়ে দুটি সংঘাতপূর্ণ অনুরোধ পাঠান',
     demo_concurrent_hint: 'পরামর্শ: এই পরীক্ষার সঠিক ফলাফলের জন্য প্রথমে উপরের বোতামে ক্লিক করে ডেটা রিসেট করুন যাতে P-001-এ কোনো সক্রিয় আবেদন না থাকে।',
+    evidence_msg_double_sale: 'এই পার্সেলে ইতিমধ্যে একটি সক্রিয় হস্তান্তর চলমান রয়েছে; একই সাথে আরেকটি হস্তান্তর চলতে পারবে না।',
+    evidence_msg_concurrent_double_sale: 'একই সময়ে আরেকটি হস্তান্তর দাখিল হয়েছে; বর্তমান আবেদনটি স্থগিত রাখা হয়েছে।',
+    evidence_msg_wrong_seller: 'দলিলে উল্লিখিত বিক্রেতা রেজিস্ট্রি রেকর্ডের বর্তমান নিবন্ধিত মালিকের সাথে মেলেনি।',
   },
   en: {
     app_title: 'MutationGuard',
@@ -155,5 +194,55 @@ export const translations = {
     demo_resetting: 'Resetting...',
     demo_concurrent_btn: 'Fire two conflicting requests at once',
     demo_concurrent_hint: 'Hint: Reset demo data first so P-001 has no active transfers, allowing the race condition detection to be demonstrated cleanly.',
+    evidence_msg_double_sale: 'Parcel already has an active transfer; concurrent transfer cannot proceed.',
+    evidence_msg_concurrent_double_sale: 'Concurrent transfer inserted simultaneously; current request placed on hold.',
+    evidence_msg_wrong_seller: 'Deed seller does not match the currently registered parcel owner.',
   },
 };
+
+const STATUS_TRANSLATION_KEYS: Record<string, keyof typeof translations.bn> = {
+  submitted: 'status_submitted',
+  verified: 'status_verified',
+  under_review: 'status_under_review',
+  approved: 'status_approved',
+  finalized: 'status_finalized',
+  held: 'status_held',
+  rejected: 'status_rejected',
+};
+
+const EVIDENCE_MESSAGE_KEYS: Record<string, keyof typeof translations.bn> = {
+  'Parcel already has an active transfer; concurrent transfer cannot proceed.':
+    'evidence_msg_double_sale',
+  'Concurrent transfer inserted simultaneously; current request placed on hold.':
+    'evidence_msg_concurrent_double_sale',
+  'Deed seller does not match the currently registered parcel owner.':
+    'evidence_msg_wrong_seller',
+};
+
+/**
+ * Translates a known workflow status code using the app's status dictionary.
+ * Unknown status strings are returned unchanged.
+ */
+export function translateStatus(status: string | null | undefined, lang: Language): string {
+  if (!status) return '';
+  const normalized = status.trim().toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(STATUS_TRANSLATION_KEYS, normalized)) {
+    const key = STATUS_TRANSLATION_KEYS[normalized];
+    return translations[lang][key] || translations.bn[key] || status;
+  }
+  return status;
+}
+
+/**
+ * Translates known fixed rules-engine evidence messages in the UI layer.
+ * Unknown messages are returned unchanged.
+ */
+export function translateEvidenceMessage(message: string | null | undefined, lang: Language): string {
+  if (!message) return '';
+  const trimmed = message.trim();
+  if (Object.prototype.hasOwnProperty.call(EVIDENCE_MESSAGE_KEYS, trimmed)) {
+    const key = EVIDENCE_MESSAGE_KEYS[trimmed];
+    return translations[lang][key] || message;
+  }
+  return message;
+}

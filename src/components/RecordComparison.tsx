@@ -117,6 +117,11 @@ export function RecordComparison({
                       {bn ? 'নিয়মে তুলনা করা হয় না' : 'not compared by the rules'}
                     </div>
                   )}
+                  {row.field === 'seller' && (
+                    <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
+                      {bn ? 'আবেদনের অংশ নয়' : 'not part of the application'}
+                    </div>
+                  )}
                 </td>
                 <td className="py-2.5 px-3 text-right whitespace-nowrap">
                   {row.differs ? (
@@ -203,6 +208,11 @@ export function RecordComparison({
                   {row.field === 'mouza' && (
                     <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5 font-normal">
                       {bn ? 'নিয়মে তুলনা করা হয় না' : 'not compared by the rules'}
+                    </div>
+                  )}
+                  {row.field === 'seller' && (
+                    <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5 font-normal">
+                      {bn ? 'আবেদনের অংশ নয়' : 'not part of the application'}
                     </div>
                   )}
                 </div>
