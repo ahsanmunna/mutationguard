@@ -138,6 +138,10 @@ export default function TransferDetailPage() {
     );
   }
 
+  const sellerNotCompared =
+    historyFailed ||
+    registryOwnerStatus(ownershipHistory, transfer.created_at) === 'unknown';
+
   // Visual Stepper 5 Stages
   const steps = [
     { key: 'submitted', labelBn: 'দাখিলকৃত', labelEn: 'Submitted' },
@@ -422,9 +426,11 @@ export default function TransferDetailPage() {
             history: historyFailed ? [] : ownershipHistory,
           })}
           language={language}
+          mode="stored"
+          sellerNotCompared={sellerNotCompared}
         />
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          {(historyFailed || registryOwnerStatus(ownershipHistory, transfer.created_at) === 'unknown')
+          {sellerNotCompared
             ? (bn
                 ? 'আবেদন দাখিলের সময়কালীন রেজিস্ট্রি মালিক নির্ধারণ করা যায়নি, তাই বিক্রেতার সারি তুলনা করা হয়নি। উপরের নীতিমালার ফলাফলসমূহ কর্তৃত্বপূর্ণ প্রমাণ।'
                 : 'The registry owner at the time of submission could not be determined, so the seller row is not compared. The rule findings above are the authoritative evidence.')

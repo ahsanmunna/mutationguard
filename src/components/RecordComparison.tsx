@@ -19,6 +19,8 @@ export interface RecordComparisonProps {
   deed?: DeedRecordInput;
   application?: ApplicationRecordInput;
   language?: Language;
+  mode?: 'preview' | 'stored';
+  sellerNotCompared?: boolean;
 }
 
 export function RecordComparison({
@@ -27,6 +29,8 @@ export function RecordComparison({
   deed,
   application,
   language: propLanguage,
+  mode = 'preview',
+  sellerNotCompared = false,
 }: RecordComparisonProps) {
   const context = useLanguage();
   const language = propLanguage || context?.language || 'bn';
@@ -232,14 +236,28 @@ export function RecordComparison({
         )}
         <span>
           {diffCount > 0
-            ? (bn
-                ? `${formatCount(diffCount, 'bn')}টি সম্ভাব্য অমিল পাওয়া গেছে। আবেদন দাখিল করার সময় নিয়মগুলো এগুলো যাচাই করবে এবং পর্যালোচনার জন্য আবেদনটি স্থগিত রাখার সম্ভাবনা রয়েছে।`
-                : (diffCount === 1
-                    ? '1 potential difference found. The rules check these when you submit and are likely to hold this application for review.'
-                    : `${formatCount(diffCount, 'en')} potential differences found. The rules check these when you submit and are likely to hold this application for review.`))
-            : (bn
-                ? 'তিনটি রেকর্ডের তথ্যে মিল রয়েছে। আবেদন দাখিল করার সময় অন্যান্য যাচাই, যেমন এই প্লটে বিদ্যমান সক্রিয় হস্তান্তর, পরিচালিত হবে।'
-                : 'The three records agree. Other checks, such as an existing active transfer on this parcel, run when you submit.')}
+            ? mode === 'stored'
+              ? (bn
+                  ? `এই রেকর্ডগুলোর মধ্যে ${formatCount(diffCount, 'bn')}টি সম্ভাব্য অমিল নথিভুক্ত হয়েছে। পর্যালোচনার ফলাফল জানতে উপরের নীতিমালার ফলাফলসমূহ দেখুন।`
+                  : (diffCount === 1
+                      ? '1 potential difference recorded between these records. See the rule findings above for the review outcome.'
+                      : `${formatCount(diffCount, 'en')} potential differences recorded between these records. See the rule findings above for the review outcome.`))
+              : (bn
+                  ? `${formatCount(diffCount, 'bn')}টি সম্ভাব্য অমিল পাওয়া গেছে। আবেদন দাখিল করার সময় নিয়মগুলো এগুলো যাচাই করবে এবং পর্যালোচনার জন্য আবেদনটি স্থগিত রাখার সম্ভাবনা রয়েছে।`
+                  : (diffCount === 1
+                      ? '1 potential difference found. The rules check these when you submit and are likely to hold this application for review.'
+                      : `${formatCount(diffCount, 'en')} potential differences found. The rules check these when you submit and are likely to hold this application for review.`))
+            : sellerNotCompared
+              ? (bn
+                  ? 'তুলনা করা ক্ষেত্রগুলোতে মিল রয়েছে। বিক্রেতার সারি তুলনা করা যায়নি।'
+                  : 'The compared fields agree. The seller row could not be compared.')
+              : mode === 'stored'
+                ? (bn
+                    ? 'তিনটি রেকর্ডের তুলনা করা ক্ষেত্রগুলোতে মিল রয়েছে।'
+                    : 'The compared fields agree across the three records.')
+                : (bn
+                    ? 'তিনটি রেকর্ডের তথ্যে মিল রয়েছে। আবেদন দাখিল করার সময় অন্যান্য যাচাই, যেমন এই প্লটে বিদ্যমান সক্রিয় হস্তান্তর, পরিচালিত হবে।'
+                    : 'The three records agree. Other checks, such as an existing active transfer on this parcel, run when you submit.')}
         </span>
       </div>
     </div>
