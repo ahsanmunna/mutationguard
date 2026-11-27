@@ -40,16 +40,20 @@ export async function POST(req: NextRequest) {
     const checkpoint = shape.checkpoint;
     const pool = getPool();
 
-    // (a) Verify signature against the registered public key of the signer.
-    const keyRes = await pool.query(
-      'SELECT public_key FROM users WHERE username = $1 LIMIT 1;',
-      [checkpoint.signer]
-    );
-    const signerPublicKey = keyRes.rows[0]?.public_key as string | undefined;
-    const signatureValid =
-      typeof signerPublicKey === 'string' && signerPublicKey.length > 0
-        ? verifyCheckpointSignature(checkpoint, signerPublicKey)
-        : false;
+    // (a) Only the system_audit key may sign checkpoints; reject any other signer
+    // without looking up or trusting another user's key.
+    let signatureValid = false;
+    if (checkpoint.signer === 'system_audit') {
+      const keyRes = await pool.query(
+        'SELECT public_key FROM users WHERE username = $1 LIMIT 1;',
+        ['system_audit']
+      );
+      const signerPublicKey = keyRes.rows[0]?.public_key as string | undefined;
+      signatureValid =
+        typeof signerPublicKey === 'string' && signerPublicKey.length > 0
+          ? verifyCheckpointSignature(checkpoint, signerPublicKey)
+          : false;
+    }
 
     // (b) Run the existing audit chain verification.
     const chainResult = await verifyAuditChain(pool);

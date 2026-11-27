@@ -39,6 +39,9 @@ export async function GET(req: NextRequest) {
     }
 
     const headSequence = Number(headRes.rows[0].sequence_num);
+    if (headSequence !== integrity.total_records) {
+      throw new ConflictError('Audit chain changed during export; try again.');
+    }
     const headHash = String(headRes.rows[0].record_hash);
 
     const keyRes = await pool.query(

@@ -12,7 +12,12 @@ import { runSeed } from '../../db/seed';
 import { closePool } from '../../db';
 import { verifyIntegrity } from '../../src/lib/audit/integrity';
 import { calculateAuditRecordHash, verifyAuditChain } from '../../src/lib/audit/ledger';
-import { CHECKPOINT_FIELDS, AuditCheckpoint } from '../../src/lib/audit/checkpoint';
+import {
+  CHECKPOINT_FIELDS,
+  AuditCheckpoint,
+  buildCheckpoint,
+  verifyCheckpointSignature,
+} from '../../src/lib/audit/checkpoint';
 import { createTransfer } from '../../src/lib/workflow/transfer-service';
 import { executeFinalization } from '../../src/lib/workflow/machine';
 import { canonicalJsonStringify, sha256 } from '../../src/lib/crypto/hasher';
@@ -202,6 +207,8 @@ describe('Audit checkpoint export and verification (real PostgreSQL)', () => {
     // Rewrite the audit chain from block #5 (DEMO_SEEDED) onward like an insider
     // with full DB + key access: change a payload, then recompute payload_hash,
     // previous_hash, record_hash, and re-sign each block with the actor's key.
+    // Block #5 is chosen because its payload is a JSON object (DEMO_SEEDED) in the
+    // seed, so this test must be updated if the seed order changes.
     const userRows = (await pool.query('SELECT username, private_key FROM users;')).rows;
     const privateKeys: Record<string, string> = {};
     for (const u of userRows) {
@@ -370,5 +377,74 @@ describe('Audit checkpoint export and verification (real PostgreSQL)', () => {
     const conflictExport = await callExportCheckpoint(reviewerToken);
     expect(conflictExport.status).toBe(409);
     expect(await countAuditRows()).toBe(initialCount);
+  });
+
+  it('(vii) rejects a checkpoint signed by a non-system user (officer_farhan) with MISMATCH and signature_valid false', async () => {
+    const reviewerToken = await makeToken('officer_farhan', 'reviewer');
+    const exported = await callExportCheckpoint(reviewerToken);
+    expect(exported.status).toBe(200);
+    const checkpoint = exported.body as AuditCheckpoint;
+
+    const farhanKeys = (
+      await pool.query(
+        `SELECT public_key, private_key FROM users WHERE username = 'officer_farhan' LIMIT 1;`
+      )
+    ).rows[0] as { public_key: string; private_key: string };
+
+    const farhanCheckpoint = buildCheckpoint(
+      {
+        chain_length: checkpoint.chain_length,
+        head_sequence: checkpoint.head_sequence,
+        head_hash: checkpoint.head_hash,
+        signer: 'officer_farhan',
+      },
+      farhanKeys.private_key
+    );
+    expect(verifyCheckpointSignature(farhanCheckpoint, farhanKeys.public_key)).toBe(true);
+
+    const verified = await callVerifyCheckpoint(farhanCheckpoint, reviewerToken);
+    expect(verified.status).toBe(200);
+    expect(verified.body.status).toBe('MISMATCH');
+    expect(verified.body.checks.signature_valid).toBe(false);
+    expect(verified.text.toLowerCase()).not.toContain('fraud');
+  });
+
+  it('(viii) rejects a checkpoint signed with system_audit key whose signer was changed to officer_farhan', async () => {
+    const reviewerToken = await makeToken('officer_farhan', 'reviewer');
+    const exported = await callExportCheckpoint(reviewerToken);
+    expect(exported.status).toBe(200);
+    const checkpoint = exported.body as AuditCheckpoint;
+
+    // Changing signer after system_audit signed alters the canonical payload
+    // and fails signature verification / pinned system_audit signer enforcement.
+    const signerMutated: AuditCheckpoint = {
+      ...checkpoint,
+      signer: 'officer_farhan',
+    };
+
+    const verified = await callVerifyCheckpoint(signerMutated, reviewerToken);
+    expect(verified.status).toBe(200);
+    expect(verified.body.status).toBe('MISMATCH');
+    expect(verified.body.checks.signature_valid).toBe(false);
+    expect(verified.text.toLowerCase()).not.toContain('fraud');
+
+    // Even if system_audit's private key signed a payload naming officer_farhan,
+    // verify-checkpoint still refuses any signer other than system_audit.
+    const systemPrivKey = (
+      await pool.query(`SELECT private_key FROM users WHERE username = 'system_audit' LIMIT 1;`)
+    ).rows[0].private_key as string;
+    const systemKeyWithOtherSigner = buildCheckpoint(
+      {
+        chain_length: checkpoint.chain_length,
+        head_sequence: checkpoint.head_sequence,
+        head_hash: checkpoint.head_hash,
+        signer: 'officer_farhan',
+      },
+      systemPrivKey
+    );
+    const verifiedOtherSigner = await callVerifyCheckpoint(systemKeyWithOtherSigner, reviewerToken);
+    expect(verifiedOtherSigner.status).toBe(200);
+    expect(verifiedOtherSigner.body.status).toBe('MISMATCH');
+    expect(verifiedOtherSigner.body.checks.signature_valid).toBe(false);
   });
 });
