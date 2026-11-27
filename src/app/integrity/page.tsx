@@ -12,11 +12,18 @@ import {
   User,
   ShieldCheck,
   ShieldAlert,
+  Download,
+  Upload,
+  X,
 } from 'lucide-react';
 import { useLanguage } from '@/components/LanguageContext';
 import { useCurrentUser } from '@/lib/use-current-user';
 import { localName, formatCount } from '@/lib/i18n/translations';
-import { Button, PageHeader } from '@/components/ui';
+import { Button, PageHeader, Panel } from '@/components/ui';
+import type {
+  AuditCheckpoint,
+  CheckpointVerificationResult,
+} from '@/lib/audit/checkpoint';
 
 export default function IntegrityPage() {
   const { t, language } = useLanguage();
@@ -28,6 +35,13 @@ export default function IntegrityPage() {
   const [tampering, setTampering] = useState(false);
   const [tamperMessage, setTamperMessage] = useState<string | null>(null);
   const [selectedTamperSeq, setSelectedTamperSeq] = useState<number>(1);
+  const [exportingCheckpoint, setExportingCheckpoint] = useState(false);
+  const [exportedCheckpoint, setExportedCheckpoint] = useState<AuditCheckpoint | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [checkpointInput, setCheckpointInput] = useState('');
+  const [verifyingCheckpoint, setVerifyingCheckpoint] = useState(false);
+  const [checkpointResult, setCheckpointResult] = useState<CheckpointVerificationResult | null>(null);
+  const [verifyCheckpointError, setVerifyCheckpointError] = useState<string | null>(null);
 
   // Who is logged in comes from the server (signed httpOnly session)
   const { user: sessionUser } = useCurrentUser();
@@ -110,6 +124,103 @@ export default function IntegrityPage() {
   const handleDeedTamper = () => runTamper({ target: 'deed', deed_number: 'DEED-2026-001' });
 
   const handleOwnerTamper = () => runTamper({ target: 'owner', parcel_id: 'P-001' });
+
+  const handleExportCheckpoint = async () => {
+    try {
+      setExportingCheckpoint(true);
+      setExportError(null);
+      const res = await fetch('/api/audit/checkpoint');
+      const data = await res.json();
+      if (!res.ok) {
+        setExportedCheckpoint(null);
+        setExportError(
+          data?.error ||
+            (bn
+              ? 'চেকপয়েন্ট এক্সপোর্ট করা যায়নি।'
+              : 'Could not export checkpoint.')
+        );
+        return;
+      }
+
+      const checkpoint = data as AuditCheckpoint;
+      setExportedCheckpoint(checkpoint);
+
+      const blob = new Blob([JSON.stringify(checkpoint, null, 2)], {
+        type: 'application/json',
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `mutationguard-checkpoint-${checkpoint.head_sequence}.json`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setExportError(err?.message || 'Failed to export checkpoint.');
+    } finally {
+      setExportingCheckpoint(false);
+    }
+  };
+
+  const handleCheckpointFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const text = await file.text();
+      setCheckpointInput(text);
+      setVerifyCheckpointError(null);
+      setCheckpointResult(null);
+    } catch {
+      setVerifyCheckpointError(
+        bn
+          ? 'নির্বাচিত ফাইলটি পড়া যায়নি।'
+          : 'Could not read the selected file.'
+      );
+    }
+  };
+
+  const handleVerifyCheckpoint = async () => {
+    setVerifyCheckpointError(null);
+    setCheckpointResult(null);
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(checkpointInput);
+    } catch {
+      setVerifyCheckpointError(
+        bn
+          ? 'অবৈধ JSON। অনুগ্রহ করে একটি সঠিক চেকপয়েন্ট JSON পেস্ট বা আপলোড করুন।'
+          : 'Invalid JSON. Please paste or upload a valid checkpoint JSON.'
+      );
+      return;
+    }
+
+    try {
+      setVerifyingCheckpoint(true);
+      const res = await fetch('/api/audit/verify-checkpoint', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(parsed),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setVerifyCheckpointError(
+          data?.error ||
+            (bn
+              ? 'চেকপয়েন্ট যাচাই করা যায়নি।'
+              : 'Could not verify checkpoint.')
+        );
+        return;
+      }
+      setCheckpointResult(data as CheckpointVerificationResult);
+    } catch (err: any) {
+      setVerifyCheckpointError(err?.message || 'Failed to verify checkpoint.');
+    } finally {
+      setVerifyingCheckpoint(false);
+    }
+  };
 
   if (!isReviewer) {
     return (
@@ -242,6 +353,219 @@ export default function IntegrityPage() {
           )}
         </div>
       )}
+
+      {/* Audit Checkpoint Section */}
+      <Panel
+        title={t('checkpoint_section_title')}
+        description={t('checkpoint_note')}
+        headerAction={
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            loading={exportingCheckpoint}
+            disabled={exportingCheckpoint || loading || tampering}
+            onClick={handleExportCheckpoint}
+            icon={<Download className="w-4 h-4" strokeWidth={1.75} aria-hidden="true" />}
+          >
+            {exportingCheckpoint ? t('checkpoint_exporting') : t('checkpoint_export_btn')}
+          </Button>
+        }
+      >
+        <div className="space-y-4">
+          {exportError && (
+            <div
+              role="alert"
+              className="p-3 rounded-md bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-200 text-xs flex items-center gap-2"
+            >
+              <TriangleAlert className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400" strokeWidth={1.75} aria-hidden="true" />
+              <span>{exportError}</span>
+            </div>
+          )}
+
+          {exportedCheckpoint && (
+            <div className="p-3 rounded-md bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-4">
+                <div>
+                  <span className="text-slate-500 mr-1.5">
+                    {bn ? 'হেড সিকোয়েন্স:' : 'Head sequence:'}
+                  </span>
+                  <span className="font-mono font-bold text-slate-900 dark:text-white">
+                    #{bn ? formatCount(exportedCheckpoint.head_sequence, language) : exportedCheckpoint.head_sequence}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-500 mr-1.5">
+                    {bn ? 'হেড হ্যাশ:' : 'Head hash:'}
+                  </span>
+                  <span
+                    className="font-mono font-semibold text-emerald-700 dark:text-emerald-400"
+                    title={exportedCheckpoint.head_hash}
+                  >
+                    {exportedCheckpoint.head_hash.slice(0, 8)}...{exportedCheckpoint.head_hash.slice(-8)}
+                  </span>
+                </div>
+              </div>
+              <span className="font-mono text-[11px] text-slate-500">
+                mutationguard-checkpoint-{exportedCheckpoint.head_sequence}.json
+              </span>
+            </div>
+          )}
+
+          {/* Verify against checkpoint */}
+          <div className="pt-3 border-t border-slate-200 dark:border-slate-800 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-xs font-bold uppercase tracking-wide text-slate-700 dark:text-slate-300">
+                {t('checkpoint_verify_title')}
+              </h3>
+              <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors">
+                <Upload className="w-3.5 h-3.5" strokeWidth={1.75} aria-hidden="true" />
+                <span>{bn ? 'JSON ফাইল নির্বাচন করুন' : 'Choose JSON file'}</span>
+                <input
+                  type="file"
+                  accept=".json,application/json"
+                  onChange={handleCheckpointFileChange}
+                  className="sr-only"
+                />
+              </label>
+            </div>
+
+            <textarea
+              value={checkpointInput}
+              onChange={(e) => setCheckpointInput(e.target.value)}
+              rows={4}
+              spellCheck={false}
+              aria-label={t('checkpoint_verify_title')}
+              placeholder={
+                bn
+                  ? 'এখানে এক্সপোর্ট করা চেকপয়েন্ট JSON পেস্ট করুন অথবা উপরের বাটন থেকে ফাইল নির্বাচন করুন...'
+                  : 'Paste exported checkpoint JSON here or choose a file above...'
+              }
+              className="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 p-2.5 text-xs font-mono text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+
+            <div className="flex items-center justify-end">
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                loading={verifyingCheckpoint}
+                disabled={verifyingCheckpoint || !checkpointInput.trim()}
+                onClick={handleVerifyCheckpoint}
+                icon={<ShieldCheck className="w-4 h-4" strokeWidth={1.75} aria-hidden="true" />}
+              >
+                {verifyingCheckpoint ? t('checkpoint_verifying') : t('checkpoint_verify_btn')}
+              </Button>
+            </div>
+
+            {verifyCheckpointError && (
+              <div
+                role="alert"
+                className="p-3 rounded-md bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-200 text-xs flex items-center gap-2"
+              >
+                <TriangleAlert className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400" strokeWidth={1.75} aria-hidden="true" />
+                <span>{verifyCheckpointError}</span>
+              </div>
+            )}
+
+            {checkpointResult && (
+              <div
+                role="status"
+                className={`p-4 rounded-lg border text-xs space-y-3 ${
+                  checkpointResult.status === 'MATCH'
+                    ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200'
+                    : 'bg-rose-50 dark:bg-rose-950/40 border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-200'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <div
+                    className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${
+                      checkpointResult.status === 'MATCH'
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-rose-600 text-white'
+                    }`}
+                  >
+                    {checkpointResult.status === 'MATCH' ? (
+                      <ShieldCheck className="w-4 h-4" strokeWidth={2} aria-hidden="true" />
+                    ) : (
+                      <ShieldAlert className="w-4 h-4" strokeWidth={2} aria-hidden="true" />
+                    )}
+                  </div>
+                  <div>
+                    <p className="font-bold text-sm">
+                      {checkpointResult.status === 'MATCH'
+                        ? t('checkpoint_match_title')
+                        : t('checkpoint_mismatch_title')}
+                    </p>
+                    <p className="text-xs opacity-90">
+                      {bn
+                        ? checkpointResult.status === 'MATCH'
+                          ? `লাইভ অডিট চেইনটি চেকপয়েন্টের সাথে মিলেছে (ব্লক #${formatCount(checkpointResult.checkpoint_head_sequence, language)}, লাইভ দৈর্ঘ্য: ${formatCount(checkpointResult.live_chain_length, language)})।`
+                          : 'লাইভ অডিট চেইনটি চেকপয়েন্টের সাথে মেলেনি।'
+                        : checkpointResult.message}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Per-check results */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 pt-1">
+                  {(
+                    [
+                      ['signature_valid', t('checkpoint_check_signature')],
+                      ['chain_valid', t('checkpoint_check_chain')],
+                      ['head_matches', t('checkpoint_check_head')],
+                      ['chain_not_shorter', t('checkpoint_check_length')],
+                    ] as const
+                  ).map(([key, label]) => {
+                    const ok = checkpointResult.checks[key];
+                    return (
+                      <div
+                        key={key}
+                        className={`flex items-center gap-2 px-2.5 py-2 rounded-md border ${
+                          ok
+                            ? 'bg-white/80 dark:bg-slate-900/80 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
+                            : 'bg-white/80 dark:bg-slate-900/80 border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-300'
+                        }`}
+                      >
+                        {ok ? (
+                          <Check className="w-3.5 h-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" strokeWidth={2.5} aria-hidden="true" />
+                        ) : (
+                          <X className="w-3.5 h-3.5 shrink-0 text-rose-600 dark:text-rose-400" strokeWidth={2.5} aria-hidden="true" />
+                        )}
+                        <span className="font-medium">{label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {checkpointResult.status === 'MISMATCH' && checkpointResult.expected_hash && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 font-mono text-[11px] pt-2 border-t border-rose-200 dark:border-rose-800">
+                    <div className="p-2.5 rounded-md bg-white dark:bg-slate-900 border border-rose-200 dark:border-rose-800 text-slate-800 dark:text-slate-200">
+                      <span className="font-semibold text-slate-500 block mb-1">
+                        {bn ? 'প্রত্যাশিত হ্যাশ (চেকপয়েন্ট):' : 'EXPECTED HASH (CHECKPOINT):'}
+                      </span>
+                      <div className="break-all">{checkpointResult.expected_hash}</div>
+                    </div>
+                    <div className="p-2.5 rounded-md bg-rose-100/70 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-800 text-rose-950 dark:text-rose-100">
+                      <span className="font-semibold text-rose-700 dark:text-rose-300 block mb-1">
+                        {bn
+                          ? `প্রাপ্ত হ্যাশ (লাইভ ব্লক #${formatCount(checkpointResult.checkpoint_head_sequence, language)}):`
+                          : `ACTUAL HASH (LIVE BLOCK #${checkpointResult.checkpoint_head_sequence}):`}
+                      </span>
+                      <div className="break-all font-semibold">
+                        {checkpointResult.actual_hash ??
+                          (bn
+                            ? `অনুপস্থিত (লাইভ দৈর্ঘ্য: ${formatCount(checkpointResult.live_chain_length, language)})`
+                            : `Missing (live chain length: ${checkpointResult.live_chain_length})`)}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </Panel>
 
       {/* Demo Tools Panel */}
       <section
