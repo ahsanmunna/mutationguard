@@ -16,7 +16,7 @@ import {
 import StatusBadge from '@/components/StatusBadge';
 import { Button } from '@/components/ui';
 import { useLanguage } from '@/components/LanguageContext';
-import { localName, formatNumber, formatDate, formatCount } from '@/lib/i18n/translations';
+import { localName, formatNumber, formatDate, formatOptionalDate, formatCount } from '@/lib/i18n/translations';
 
 export default function PublicVerifyPage() {
   const params = useParams();
@@ -183,7 +183,7 @@ export default function PublicVerifyPage() {
             </span>
             <span className="text-slate-500">
               {bn ? 'দলিলের তারিখ:' : 'Deed Date:'}{' '}
-              <span className="font-mono text-slate-800 dark:text-slate-200">{deed?.deed_date || transfer.deed_date || '—'}</span>
+              <span className="font-mono text-slate-800 dark:text-slate-200">{formatOptionalDate(deed?.deed_date || transfer.deed_date, language)}</span>
             </span>
           </div>
         </div>
